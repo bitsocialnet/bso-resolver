@@ -34,7 +34,13 @@ export async function resolveBso({
   name,
   provider,
 }: ResolveBsoArgs): Promise<string | undefined> {
-  const ethName = normalizeBsoAliasDomain(name);
+  const resolvedName = name.includes(".") ? name : `${name}.bso`;
+
+  if (!isBsoAliasDomain(resolvedName)) {
+    throw new Error(`Unsupported TLD in "${name}". Only .bso and .eth domains are supported.`);
+  }
+
+  const ethName = normalizeBsoAliasDomain(resolvedName);
   const normalized = normalize(ethName);
 
   const transport =
@@ -45,10 +51,17 @@ export async function resolveBso({
     transport,
   });
 
-  const result = await client.getEnsText({
-    name: normalized,
-    key: "bitsocial",
-  });
+  try {
+    const result = await client.getEnsText({
+      name: normalized,
+      key: "bitsocial",
+    });
 
-  return result ?? undefined;
+    return result ?? undefined;
+  } catch (error) {
+    if (error instanceof Error) {
+      (error as any).details = { name, resolvedName, provider, ethName, normalized, chain: "mainnet" };
+    }
+    throw error;
+  }
 }

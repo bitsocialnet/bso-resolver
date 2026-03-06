@@ -85,13 +85,44 @@ describe("resolveBso", () => {
     expect(http).toHaveBeenCalledWith("https://rpc.example.com");
   });
 
-  it("propagates errors from viem", async () => {
+  it("defaults to .bso when name has no TLD", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+    }));
+
+    const result = await resolveBso({ name: "example", provider: "viem" });
+
+    expect(result).toBe("QmHash");
+    expect(getMockGetEnsText()).toHaveBeenCalledWith({
+      name: "example.eth",
+      key: "bitsocial",
+    });
+  });
+
+  it("throws for unsupported TLDs", async () => {
+    await expect(
+      resolveBso({ name: "example.com", provider: "viem" })
+    ).rejects.toThrow('Unsupported TLD in "example.com". Only .bso and .eth domains are supported.');
+  });
+
+  it("propagates errors from viem with details", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockRejectedValue(new Error("RPC error")),
     }));
 
-    await expect(
-      resolveBso({ name: "example.eth", provider: "viem" })
-    ).rejects.toThrow("RPC error");
+    try {
+      await resolveBso({ name: "example.eth", provider: "viem" });
+      expect.fail("should have thrown");
+    } catch (error: any) {
+      expect(error.message).toBe("RPC error");
+      expect(error.details).toEqual({
+        name: "example.eth",
+        resolvedName: "example.eth",
+        provider: "viem",
+        ethName: "example.eth",
+        normalized: "example.eth",
+        chain: "mainnet",
+      });
+    }
   });
 });
