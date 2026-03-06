@@ -15,7 +15,7 @@ export interface ResolveBsoArgs {
 
 // --- Utility functions ---
 
-export function isEthAliasDomain(address: string): boolean {
+export function isBsoAliasDomain(address: string): boolean {
   const lower = address.toLowerCase();
   return lower.endsWith(".eth") || lower.endsWith(".bso");
 }
@@ -27,7 +27,7 @@ export function normalizeEthAliasDomain(address: string): string {
 // --- Main API ---
 
 export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
-  return isEthAliasDomain(name);
+  return isBsoAliasDomain(name);
 }
 
 export async function resolveBso({

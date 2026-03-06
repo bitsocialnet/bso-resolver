@@ -1,35 +1,35 @@
 import { describe, it, expect } from "vitest";
 import {
-  isEthAliasDomain,
+  isBsoAliasDomain,
   normalizeEthAliasDomain,
   canResolveBso,
 } from "../src/index.js";
 
-describe("isEthAliasDomain", () => {
+describe("isBsoAliasDomain", () => {
   it("returns true for .eth domains", () => {
-    expect(isEthAliasDomain("example.eth")).toBe(true);
+    expect(isBsoAliasDomain("example.eth")).toBe(true);
   });
 
   it("returns true for .bso domains", () => {
-    expect(isEthAliasDomain("example.bso")).toBe(true);
+    expect(isBsoAliasDomain("example.bso")).toBe(true);
   });
 
   it("is case-insensitive", () => {
-    expect(isEthAliasDomain("example.ETH")).toBe(true);
-    expect(isEthAliasDomain("example.BSO")).toBe(true);
-    expect(isEthAliasDomain("example.Eth")).toBe(true);
+    expect(isBsoAliasDomain("example.ETH")).toBe(true);
+    expect(isBsoAliasDomain("example.BSO")).toBe(true);
+    expect(isBsoAliasDomain("example.Eth")).toBe(true);
   });
 
   it("returns false for .com domains", () => {
-    expect(isEthAliasDomain("example.com")).toBe(false);
+    expect(isBsoAliasDomain("example.com")).toBe(false);
   });
 
   it("returns false for .sol domains", () => {
-    expect(isEthAliasDomain("example.sol")).toBe(false);
+    expect(isBsoAliasDomain("example.sol")).toBe(false);
   });
 
   it("returns false for strings without a dot", () => {
-    expect(isEthAliasDomain("example")).toBe(false);
+    expect(isBsoAliasDomain("example")).toBe(false);
   });
 });
 

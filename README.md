@@ -51,7 +51,7 @@ Resolves a `.bso` or `.eth` name by looking up the `bitsocial` TXT record on ENS
 
 Returns the TXT record value, or `undefined` if not found.
 
-### `isEthAliasDomain(address: string): boolean`
+### `isBsoAliasDomain(address: string): boolean`
 
 Returns `true` if the address ends with `.bso` or `.eth`.
 
