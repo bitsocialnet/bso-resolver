@@ -19,6 +19,8 @@ vi.mock("viem/ens", () => ({
 import { createPublicClient, http } from "viem";
 import { resolveBso } from "../src/index.js";
 
+const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
+
 function getMockGetEnsText(): Mock {
   const client = (createPublicClient as Mock).mock.results.at(-1)?.value;
   return client.getEnsText;
@@ -35,12 +37,12 @@ describe("resolveBso", () => {
 
   it('resolves .eth name with provider="viem"', async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmSomeIpnsHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const result = await resolveBso({ name: "example.eth", provider: "viem" });
 
-    expect(result).toBe("QmSomeIpnsHash");
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(http).toHaveBeenCalledWith();
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
@@ -50,12 +52,12 @@ describe("resolveBso", () => {
 
   it("resolves .bso name by normalizing to .eth first", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmSomeIpnsHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const result = await resolveBso({ name: "example.bso", provider: "viem" });
 
-    expect(result).toBe("QmSomeIpnsHash");
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -74,7 +76,7 @@ describe("resolveBso", () => {
 
   it("passes custom URL to http() transport", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     await resolveBso({
@@ -87,7 +89,7 @@ describe("resolveBso", () => {
 
   it("passes abort signal to http() transport with provider=viem", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const controller = new AbortController();
@@ -105,7 +107,7 @@ describe("resolveBso", () => {
 
   it("passes abort signal to http() transport with custom URL", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const controller = new AbortController();
@@ -123,16 +125,84 @@ describe("resolveBso", () => {
 
   it("defaults to .bso when name has no TLD", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const result = await resolveBso({ name: "example", provider: "viem" });
 
-    expect(result).toBe("QmHash");
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
     });
+  });
+
+  it("parses TXT record metadata fields", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockResolvedValue(
+          `${VALID_PUBLIC_KEY};name=memes.bso;network=mainnet;owner=bitsocial`
+        ),
+    }));
+
+    const result = await resolveBso({ name: "example.eth", provider: "viem" });
+
+    expect(result).toEqual({
+      publicKey: VALID_PUBLIC_KEY,
+      name: "memes.bso",
+      network: "mainnet",
+      owner: "bitsocial",
+    });
+  });
+
+  it("uses last value when metadata keys are duplicated", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockResolvedValue(`${VALID_PUBLIC_KEY};network=mainnet;network=testnet`),
+    }));
+
+    const result = await resolveBso({ name: "example.eth", provider: "viem" });
+
+    expect(result).toEqual({
+      publicKey: VALID_PUBLIC_KEY,
+      network: "testnet",
+    });
+  });
+
+  it("throws for malformed metadata segments", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(`${VALID_PUBLIC_KEY};bad-segment`),
+    }));
+
+    await expect(
+      resolveBso({ name: "example.eth", provider: "viem" })
+    ).rejects.toThrow('Invalid bitsocial TXT record: expected "key=value" segment');
+  });
+
+  it('throws when metadata includes "publicKey" key', async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockResolvedValue(`${VALID_PUBLIC_KEY};publicKey=12D3KooWWrongValue`),
+    }));
+
+    await expect(
+      resolveBso({ name: "example.eth", provider: "viem" })
+    ).rejects.toThrow('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
+  });
+
+  it("throws when first TXT segment is not a valid IPNS public key", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("not-a-valid-public-key;network=mainnet"),
+    }));
+
+    await expect(
+      resolveBso({ name: "example.eth", provider: "viem" })
+    ).rejects.toThrow(
+      "Invalid bitsocial TXT record: expected a valid IPNS public key as the first segment."
+    );
   });
 
   it("throws for unsupported TLDs", async () => {
@@ -164,7 +234,7 @@ describe("resolveBso", () => {
 
   it("rejects immediately with AbortError for pre-aborted signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const controller = new AbortController();

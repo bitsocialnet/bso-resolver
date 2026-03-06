@@ -27,17 +27,18 @@ canResolveBso({ name: "example.eth" }); // true
 canResolveBso({ name: "example.com" }); // false
 
 // Resolve using viem's default public transport
-const address = await resolveBso({ name: "example.bso", provider: "viem" });
+const record = await resolveBso({ name: "example.bso", provider: "viem" });
+// { publicKey: "12D3KooW..." } or { publicKey: "12D3KooW...", name: "memes.bso", ... }
 
 // Resolve using a custom RPC URL
-const address2 = await resolveBso({
+const record2 = await resolveBso({
   name: "example.eth",
   provider: "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
 });
 
 // Optional cancellation with AbortController
 const controller = new AbortController();
-const address3 = await resolveBso({
+const record3 = await resolveBso({
   name: "example.bso",
   provider: "viem",
   abortSignal: controller.signal,
@@ -50,15 +51,21 @@ const address3 = await resolveBso({
 
 Returns `true` if the name ends with `.bso` or `.eth` (case-insensitive).
 
-### `resolveBso({ name: string, provider: string, abortSignal?: AbortSignal }): Promise<string | undefined>`
+### `resolveBso({ name: string, provider: string, abortSignal?: AbortSignal }): Promise<{ publicKey: string, ...otherFields } | undefined>`
 
 Resolves a `.bso` or `.eth` name by looking up the `bitsocial` TXT record on ENS.
+
+This is a breaking API change from the earlier raw-string return type.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`, `"example.eth"`)
 - **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
-Returns the TXT record value, or `undefined` if not found.
+Returns a parsed object from the `bitsocial` TXT record, or `undefined` if not found.
+
+Supported TXT value formats:
+- Legacy: `<ipnsPublicKey>` -> `{ publicKey }`
+- Extended: `<ipnsPublicKey>;key=value;other=value` -> `{ publicKey, key, other }`
 
 ### `isBsoAliasDomain(address: string): boolean`
 

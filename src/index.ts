@@ -14,6 +14,11 @@ export interface ResolveBsoArgs {
   abortSignal?: AbortSignal;
 }
 
+export interface BsoResolveResult {
+  publicKey: string;
+  [key: string]: string;
+}
+
 // --- Utility functions ---
 
 export function isBsoAliasDomain(address: string): boolean {
@@ -39,6 +44,64 @@ function throwIfAborted(abortSignal?: AbortSignal): void {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function isValidIpnsPublicKey(value: string): boolean {
+  const base58Value = value.trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(base58Value)) {
+    return false;
+  }
+
+  if (base58Value.startsWith("12D3Koo")) {
+    return base58Value.length === 52;
+  }
+
+  if (base58Value.startsWith("Qm")) {
+    return base58Value.length === 46;
+  }
+
+  return false;
+}
+
+function parseBitsocialTxtRecord(record: string): BsoResolveResult {
+  const segments = record.split(";").map((segment) => segment.trim());
+  const firstSegment = segments[0];
+  if (!firstSegment) {
+    throw new Error("Invalid bitsocial TXT record: missing publicKey.");
+  }
+
+  if (!isValidIpnsPublicKey(firstSegment)) {
+    throw new Error(
+      "Invalid bitsocial TXT record: expected a valid IPNS public key as the first segment."
+    );
+  }
+
+  const parsed: BsoResolveResult = {
+    publicKey: firstSegment,
+  };
+
+  for (const segment of segments.slice(1)) {
+    const separatorIndex = segment.indexOf("=");
+    if (separatorIndex <= 0) {
+      throw new Error(
+        `Invalid bitsocial TXT record: expected "key=value" segment, received "${segment}".`
+      );
+    }
+
+    const key = segment.slice(0, separatorIndex).trim();
+    if (!key) {
+      throw new Error("Invalid bitsocial TXT record: metadata key cannot be empty.");
+    }
+
+    if (key === "publicKey") {
+      throw new Error('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
+    }
+
+    const value = segment.slice(separatorIndex + 1).trim();
+    parsed[key] = value;
+  }
+
+  return parsed;
 }
 
 async function withAbortSignal<T>(
@@ -81,7 +144,7 @@ export async function resolveBso({
   name,
   provider,
   abortSignal,
-}: ResolveBsoArgs): Promise<string | undefined> {
+}: ResolveBsoArgs): Promise<BsoResolveResult | undefined> {
   const resolvedName = name.includes(".") ? name : `${name}.bso`;
 
   if (!isBsoAliasDomain(resolvedName)) {
@@ -115,7 +178,11 @@ export async function resolveBso({
       abortSignal
     );
 
-    return result ?? undefined;
+    if (result == null) {
+      return undefined;
+    }
+
+    return parseBitsocialTxtRecord(result);
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
