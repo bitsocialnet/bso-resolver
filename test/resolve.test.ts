@@ -85,6 +85,42 @@ describe("resolveBso", () => {
     expect(http).toHaveBeenCalledWith("https://rpc.example.com");
   });
 
+  it("passes abort signal to http() transport with provider=viem", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+    }));
+
+    const controller = new AbortController();
+
+    await resolveBso({
+      name: "example.eth",
+      provider: "viem",
+      abortSignal: controller.signal,
+    });
+
+    expect(http).toHaveBeenCalledWith(undefined, {
+      fetchOptions: { signal: controller.signal },
+    });
+  });
+
+  it("passes abort signal to http() transport with custom URL", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+    }));
+
+    const controller = new AbortController();
+
+    await resolveBso({
+      name: "example.eth",
+      provider: "https://rpc.example.com",
+      abortSignal: controller.signal,
+    });
+
+    expect(http).toHaveBeenCalledWith("https://rpc.example.com", {
+      fetchOptions: { signal: controller.signal },
+    });
+  });
+
   it("defaults to .bso when name has no TLD", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue("QmHash"),
@@ -124,5 +160,45 @@ describe("resolveBso", () => {
         chain: "mainnet",
       });
     }
+  });
+
+  it("rejects immediately with AbortError for pre-aborted signal", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("QmHash"),
+    }));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      resolveBso({
+        name: "example.eth",
+        provider: "viem",
+        abortSignal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(createPublicClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects with AbortError when aborted during in-flight resolution", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn(
+        () =>
+          new Promise(() => {
+            // Intentionally unresolved to simulate a long-running request.
+          })
+      ),
+    }));
+
+    const controller = new AbortController();
+    const pending = resolveBso({
+      name: "example.eth",
+      provider: "viem",
+      abortSignal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 });

@@ -34,6 +34,14 @@ const address2 = await resolveBso({
   name: "example.eth",
   provider: "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
 });
+
+// Optional cancellation with AbortController
+const controller = new AbortController();
+const address3 = await resolveBso({
+  name: "example.bso",
+  provider: "viem",
+  abortSignal: controller.signal,
+});
 ```
 
 ## API
@@ -42,12 +50,13 @@ const address2 = await resolveBso({
 
 Returns `true` if the name ends with `.bso` or `.eth` (case-insensitive).
 
-### `resolveBso({ name: string, provider: string }): Promise<string | undefined>`
+### `resolveBso({ name: string, provider: string, abortSignal?: AbortSignal }): Promise<string | undefined>`
 
 Resolves a `.bso` or `.eth` name by looking up the `bitsocial` TXT record on ENS.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`, `"example.eth"`)
-- **`provider`** - Either `"viem"` for the default public transport, or an RPC URL
+- **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL
+- **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns the TXT record value, or `undefined` if not found.
 
@@ -74,6 +83,7 @@ After setup, releases created by `release-it` will automatically trigger npm pub
 ## Future Considerations
 
 - Whether the resolver should maintain internal client caching (reuse viem `PublicClient` instances across calls for the same provider URL) for performance.
+- The resolver is currently stateless and HTTP-only. WebSocket provider lifecycle/cancellation support is intentionally deferred.
 
 ## License
 
