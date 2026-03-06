@@ -1,0 +1,17 @@
+name: CI
+on:
+  push:
+    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'src/**', 'test/**', '.github/**']
+  pull_request:
+    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'src/**', 'test/**', '.github/**']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: 'npm' }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
