@@ -55,7 +55,7 @@ Returns the TXT record value, or `undefined` if not found.
 
 Returns `true` if the address ends with `.bso` or `.eth`.
 
-### `normalizeEthAliasDomain(address: string): string`
+### `normalizeBsoAliasDomain(address: string): string`
 
 Converts a `.bso` suffix to `.eth`. Leaves `.eth` addresses unchanged.
 

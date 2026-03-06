@@ -20,7 +20,7 @@ export function isBsoAliasDomain(address: string): boolean {
   return lower.endsWith(".eth") || lower.endsWith(".bso");
 }
 
-export function normalizeEthAliasDomain(address: string): string {
+export function normalizeBsoAliasDomain(address: string): string {
   return address.endsWith(".bso") ? address.slice(0, -4) + ".eth" : address;
 }
 
@@ -34,7 +34,7 @@ export async function resolveBso({
   name,
   provider,
 }: ResolveBsoArgs): Promise<string | undefined> {
-  const ethName = normalizeEthAliasDomain(name);
+  const ethName = normalizeBsoAliasDomain(name);
   const normalized = normalize(ethName);
 
   const transport =

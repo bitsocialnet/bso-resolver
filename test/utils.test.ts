@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isBsoAliasDomain,
-  normalizeEthAliasDomain,
+  normalizeBsoAliasDomain,
   canResolveBso,
 } from "../src/index.js";
 
@@ -33,21 +33,21 @@ describe("isBsoAliasDomain", () => {
   });
 });
 
-describe("normalizeEthAliasDomain", () => {
+describe("normalizeBsoAliasDomain", () => {
   it("converts .bso to .eth", () => {
-    expect(normalizeEthAliasDomain("example.bso")).toBe("example.eth");
+    expect(normalizeBsoAliasDomain("example.bso")).toBe("example.eth");
   });
 
   it("leaves .eth unchanged", () => {
-    expect(normalizeEthAliasDomain("example.eth")).toBe("example.eth");
+    expect(normalizeBsoAliasDomain("example.eth")).toBe("example.eth");
   });
 
   it("handles subdomains", () => {
-    expect(normalizeEthAliasDomain("sub.example.bso")).toBe("sub.example.eth");
+    expect(normalizeBsoAliasDomain("sub.example.bso")).toBe("sub.example.eth");
   });
 
   it("does not replace .bso in the middle of a name", () => {
-    expect(normalizeEthAliasDomain("bso.example.eth")).toBe("bso.example.eth");
+    expect(normalizeBsoAliasDomain("bso.example.eth")).toBe("bso.example.eth");
   });
 });
 
