@@ -99,9 +99,7 @@ Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
 Returns a parsed object from the `bitsocial` TXT record, or `undefined` if not found.
 
-Supported TXT value formats:
-- Legacy: `<ipnsPublicKey>` -> `{ publicKey }`
-- Extended: `<ipnsPublicKey>;key=value;other=value` -> `{ publicKey, key, other }`
+TXT value format: `<ipnsPublicKey>[;key=value;other=value]` -> `{ publicKey, key, other }`
 
 #### `resolver.canResolve({ name }): boolean`
 
