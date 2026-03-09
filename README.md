@@ -86,7 +86,7 @@ Creates a resolver instance with a shared viem client and persistent cache. Both
 
 - **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).hostname}` ``)
 - **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL
-- **`dataPath`** (optional) - Enables SQLite persistence for the cache
+- **`dataPath`** (optional, Node only) - Enables SQLite persistence for the cache. Browser builds do not support SQLite and will throw if `dataPath` is provided.
 
 ```ts
 const resolver = new BsoResolver({
@@ -162,6 +162,41 @@ IndexedDB handles concurrency natively via transactions. No conflicts.
 ### Lifecycle / cleanup
 
 Call `resolver.destroy()` when done. Resources (DB connections, client references) are released when the last resolver using them is destroyed. Calling `destroy()` is idempotent and safe to call multiple times.
+
+## Testing
+
+Run the full test suite with:
+
+```bash
+npm test
+```
+
+Install the Playwright browser binaries used by the browser suite with:
+
+```bash
+npm run test:browser:install
+```
+
+Run the browser suite on Playwright's Chromium and Firefox engines with:
+
+```bash
+npm run test:browser
+```
+
+On Linux CI or fresh machines, Playwright may also require:
+
+```bash
+npx playwright install --with-deps chromium firefox
+```
+
+## Entry Points
+
+The package publishes separate Node and browser entry points.
+
+- Browser-aware bundlers should resolve the root package import to the browser build automatically.
+- Explicit subpaths are also available:
+  - `@bitsocial/bso-resolver/browser`
+  - `@bitsocial/bso-resolver/node`
 
 ## Publishing to npm
 

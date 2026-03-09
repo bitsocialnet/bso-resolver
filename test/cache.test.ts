@@ -5,13 +5,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createInMemoryCache,
-  createSqliteCache,
-  createIndexedDBCache,
-  createCache,
   isCacheStale,
   DEFAULT_CACHE_TTL_MS,
   type CacheEntry,
-} from "../src/cache.js";
+} from "../src/runtime/shared/cache.js";
+import {
+  createSqliteCache,
+  createCache,
+} from "../src/runtime/node/cache.js";
+import { createIndexedDBCache } from "../src/runtime/browser/cache.js";
 
 const SAMPLE_ENTRY: CacheEntry = {
   value: { publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR" },

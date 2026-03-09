@@ -16,7 +16,7 @@ vi.mock("viem/ens", () => ({
   normalize: (name: string) => name.toLowerCase(),
 }));
 
-vi.mock("../src/cache.js", () => {
+vi.mock("../src/runtime/node/cache.js", () => {
   function makeCache() {
     const store = new Map();
     return {
@@ -44,7 +44,7 @@ vi.mock("../src/cache.js", () => {
 
 import { createPublicClient, http } from "viem";
 import { BsoResolver, _resetRegistries } from "../src/index.js";
-import { isCacheStale } from "../src/cache.js";
+import { isCacheStale } from "../src/runtime/node/cache.js";
 
 const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
 
