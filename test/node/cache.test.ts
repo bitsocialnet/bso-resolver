@@ -44,28 +44,28 @@ describe("createSqliteCache", () => {
 
   it("stores and retrieves entries", async () => {
     const cache = await createSqliteCache(tmpDir);
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY);
   });
 
   it("overwrites existing entries", async () => {
     const cache = await createSqliteCache(tmpDir);
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.set("example.eth", SAMPLE_ENTRY_WITH_METADATA);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY_WITH_METADATA);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
   });
 
   it("deletes entries", async () => {
     const cache = await createSqliteCache(tmpDir);
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.delete("example.eth");
-    expect(await cache.get("example.eth")).toBeUndefined();
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.delete("example.bso");
+    expect(await cache.get("example.bso")).toBeUndefined();
   });
 
   it("serializes and deserializes metadata fields", async () => {
     const cache = await createSqliteCache(tmpDir);
-    await cache.set("meta.eth", SAMPLE_ENTRY_WITH_METADATA);
-    const result = await cache.get("meta.eth");
+    await cache.set("meta.bso", SAMPLE_ENTRY_WITH_METADATA);
+    const result = await cache.get("meta.bso");
     expect(result).toEqual(SAMPLE_ENTRY_WITH_METADATA);
     expect(result?.value.name).toBe("memes.bso");
     expect(result?.value.network).toBe("mainnet");
@@ -73,9 +73,9 @@ describe("createSqliteCache", () => {
 
   it("closes the database on destroy", async () => {
     const cache = await createSqliteCache(tmpDir);
-    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
     await cache.destroy();
-    await expect(cache.get("example.eth")).rejects.toThrow();
+    await expect(cache.get("example.bso")).rejects.toThrow();
   });
 
   it("creates the .bso-resolver directory inside dataPath", async () => {
@@ -99,29 +99,29 @@ describe("createIndexedDBCache", () => {
 
   it("stores and retrieves entries", async () => {
     const cache = await createIndexedDBCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY);
   });
 
   it("overwrites existing entries", async () => {
     const cache = await createIndexedDBCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.set("example.eth", SAMPLE_ENTRY_WITH_METADATA);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY_WITH_METADATA);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
   });
 
   it("deletes entries", async () => {
     const cache = await createIndexedDBCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.delete("example.eth");
-    expect(await cache.get("example.eth")).toBeUndefined();
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.delete("example.bso");
+    expect(await cache.get("example.bso")).toBeUndefined();
   });
 
   it("closes the database on destroy", async () => {
     const cache = await createIndexedDBCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
     await cache.destroy();
-    await expect(cache.get("example.eth")).rejects.toThrow();
+    await expect(cache.get("example.bso")).rejects.toThrow();
   });
 });
 
@@ -132,8 +132,8 @@ describe("createCache", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "bso-cache-factory-"));
     try {
       const cache = await createCache({ dataPath: tmpDir });
-      await cache.set("test.eth", SAMPLE_ENTRY);
-      expect(await cache.get("test.eth")).toEqual(SAMPLE_ENTRY);
+      await cache.set("test.bso", SAMPLE_ENTRY);
+      expect(await cache.get("test.bso")).toEqual(SAMPLE_ENTRY);
 
       // Verify it actually created the sqlite file
       const { existsSync } = await import("node:fs");
@@ -145,8 +145,8 @@ describe("createCache", () => {
 
   it("returns IndexedDB cache when indexedDB is available and no dataPath", async () => {
     const cache = await createCache();
-    await cache.set("test.eth", SAMPLE_ENTRY);
-    expect(await cache.get("test.eth")).toEqual(SAMPLE_ENTRY);
+    await cache.set("test.bso", SAMPLE_ENTRY);
+    expect(await cache.get("test.bso")).toEqual(SAMPLE_ENTRY);
   });
 
   it("returns in-memory cache when no dataPath and no indexedDB", async () => {
@@ -155,8 +155,8 @@ describe("createCache", () => {
     delete globalThis.indexedDB;
     try {
       const cache = await createCache();
-      await cache.set("test.eth", SAMPLE_ENTRY);
-      expect(await cache.get("test.eth")).toEqual(SAMPLE_ENTRY);
+      await cache.set("test.bso", SAMPLE_ENTRY);
+      expect(await cache.get("test.bso")).toEqual(SAMPLE_ENTRY);
     } finally {
       globalThis.indexedDB = original;
     }

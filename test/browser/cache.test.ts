@@ -43,9 +43,9 @@ describe("browser IndexedDB cache", () => {
   it("stores and retrieves entries with createIndexedDBCache", async () => {
     const cache = await createIndexedDBCache();
 
-    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
 
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY);
 
     await cache.destroy();
   });
@@ -53,12 +53,12 @@ describe("browser IndexedDB cache", () => {
   it("overwrites and deletes entries with createIndexedDBCache", async () => {
     const cache = await createIndexedDBCache();
 
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.set("example.eth", SAMPLE_ENTRY_WITH_METADATA);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY_WITH_METADATA);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
 
-    await cache.delete("example.eth");
-    expect(await cache.get("example.eth")).toBeUndefined();
+    await cache.delete("example.bso");
+    expect(await cache.get("example.bso")).toBeUndefined();
 
     await cache.destroy();
   });
@@ -66,8 +66,8 @@ describe("browser IndexedDB cache", () => {
   it("uses IndexedDB when createCache is called without dataPath", async () => {
     const cache = await createCache();
 
-    await cache.set("factory.eth", SAMPLE_ENTRY);
-    expect(await cache.get("factory.eth")).toEqual(SAMPLE_ENTRY);
+    await cache.set("factory.bso", SAMPLE_ENTRY);
+    expect(await cache.get("factory.bso")).toEqual(SAMPLE_ENTRY);
 
     await cache.destroy();
   });
@@ -81,12 +81,12 @@ describe("browser IndexedDB cache", () => {
   it("allows the database to be recreated after destroy()", async () => {
     const cache = await createIndexedDBCache();
 
-    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
     await cache.destroy();
     await deleteCacheDatabase();
 
     const recreated = await createIndexedDBCache();
-    expect(await recreated.get("example.eth")).toBeUndefined();
+    expect(await recreated.get("example.bso")).toBeUndefined();
 
     await recreated.destroy();
   });

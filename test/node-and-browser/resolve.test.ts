@@ -54,13 +54,13 @@ describe("BsoResolver", () => {
     await cleanupIndexedDB();
   });
 
-  it('resolves .eth name with provider="viem"', async () => {
+  it('resolves .bso name with provider="viem"', async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.eth" });
+    const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
@@ -95,7 +95,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "unknown.eth" });
+    const result = await resolver.resolve({ name: "unknown.bso" });
 
     expect(result).toBeUndefined();
 
@@ -108,7 +108,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
 
     expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchOptions: { signal: expect.any(AbortSignal) } });
 
@@ -121,7 +121,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
 
     expect(webSocket).toHaveBeenCalledWith("wss://rpc.example.com", { reconnect: false });
     expect(http).not.toHaveBeenCalled();
@@ -135,7 +135,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "ws://rpc.example.com" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
 
     expect(webSocket).toHaveBeenCalledWith("ws://rpc.example.com", { reconnect: false });
     expect(http).not.toHaveBeenCalled();
@@ -170,7 +170,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.eth" });
+    const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({
       publicKey: VALID_PUBLIC_KEY,
@@ -190,7 +190,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.eth" });
+    const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({
       publicKey: VALID_PUBLIC_KEY,
@@ -208,7 +208,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.eth" })
+      resolver.resolve({ name: "example.bso" })
     ).rejects.toThrow('Invalid bitsocial TXT record: expected "key=value" segment');
 
     await resolver.destroy();
@@ -224,7 +224,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.eth" })
+      resolver.resolve({ name: "example.bso" })
     ).rejects.toThrow('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
 
     await resolver.destroy();
@@ -238,7 +238,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.eth" })
+      resolver.resolve({ name: "example.bso" })
     ).rejects.toThrow(
       "Invalid bitsocial TXT record: expected a valid IPNS public key as the first segment."
     );
@@ -264,13 +264,13 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     try {
-      await resolver.resolve({ name: "example.eth" });
+      await resolver.resolve({ name: "example.bso" });
       expect.fail("should have thrown");
     } catch (error: any) {
       expect(error.message).toBe("RPC error");
       expect(error.details).toEqual({
-        name: "example.eth",
-        resolvedName: "example.eth",
+        name: "example.bso",
+        resolvedName: "example.bso",
         provider: "viem",
         ethName: "example.eth",
         normalized: "example.eth",
@@ -308,7 +308,7 @@ describe("BsoResolver abort and destroy", () => {
 
     await expect(
       resolver.resolve({
-        name: "example.eth",
+        name: "example.bso",
         abortSignal: controller.signal,
       })
     ).rejects.toMatchObject({ name: "AbortError" });
@@ -330,7 +330,7 @@ describe("BsoResolver abort and destroy", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     const pending = resolver.resolve({
-      name: "example.eth",
+      name: "example.bso",
       abortSignal: controller.signal,
     });
 
@@ -353,8 +353,8 @@ describe("BsoResolver abort and destroy", () => {
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
-    const pending1 = resolver.resolve({ name: "a.eth" });
-    const pending2 = resolver.resolve({ name: "b.eth" });
+    const pending1 = resolver.resolve({ name: "a.bso" });
+    const pending2 = resolver.resolve({ name: "b.bso" });
 
     await resolver.destroy();
 
@@ -374,8 +374,8 @@ describe("BsoResolver abort and destroy", () => {
     const controller = new AbortController();
 
     // Two concurrent resolves for the same name — one with abort signal
-    const p1 = resolver.resolve({ name: "example.eth", abortSignal: controller.signal });
-    const p2 = resolver.resolve({ name: "example.eth" });
+    const p1 = resolver.resolve({ name: "example.bso", abortSignal: controller.signal });
+    const p2 = resolver.resolve({ name: "example.bso" });
 
     // Abort the first caller
     controller.abort();
@@ -402,7 +402,7 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
 
     await resolver.destroy();
 
@@ -415,7 +415,7 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
 
     // Capture the signal passed to http()
     const httpCall = (http as Mock).mock.calls[0];
@@ -447,17 +447,17 @@ describe("BsoResolver lifecycle", () => {
 
   it("throws after destroy() is called", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
     await resolver.destroy();
 
     await expect(
-      resolver.resolve({ name: "example.eth" })
+      resolver.resolve({ name: "example.bso" })
     ).rejects.toThrow("Cannot resolve after destroy() has been called.");
   });
 
   it("destroy() is idempotent", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "example.bso" });
     await resolver.destroy();
     await resolver.destroy(); // should not throw
   });
@@ -469,7 +469,7 @@ describe("BsoResolver lifecycle", () => {
 
   it("canResolve works without initialization", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    expect(resolver.canResolve({ name: "example.eth" })).toBe(true);
+    expect(resolver.canResolve({ name: "example.bso" })).toBe(true);
     expect(resolver.canResolve({ name: "example.com" })).toBe(false);
   });
 
@@ -492,8 +492,8 @@ describe("BsoResolver lifecycle", () => {
     const r1 = new BsoResolver({ key: "r1", provider: "viem" });
     const r2 = new BsoResolver({ key: "r2", provider: "viem" });
 
-    await r1.resolve({ name: "a.eth" });
-    await r2.resolve({ name: "b.eth" });
+    await r1.resolve({ name: "a.bso" });
+    await r2.resolve({ name: "b.bso" });
 
     expect(createPublicClient).toHaveBeenCalledTimes(2);
 
@@ -505,13 +505,13 @@ describe("BsoResolver lifecycle", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     // First call populates cache
-    await resolver.resolve({ name: "cached.eth" });
+    await resolver.resolve({ name: "cached.bso" });
 
     const mockGetEnsText = getMockGetEnsText();
     mockGetEnsText.mockClear();
 
     // Second call should use cache (entry was just written, so it's fresh)
-    await resolver.resolve({ name: "cached.eth" });
+    await resolver.resolve({ name: "cached.bso" });
     expect(mockGetEnsText).not.toHaveBeenCalled();
 
     await resolver.destroy();
@@ -549,7 +549,7 @@ describe("BsoResolver stale-while-revalidate", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "stale.eth" });
+    await resolver.resolve({ name: "stale.bso" });
 
     // Now mock returns updated key for background refresh
     const mockGetEnsText = getMockGetEnsText();
@@ -557,7 +557,7 @@ describe("BsoResolver stale-while-revalidate", () => {
 
     // Advance past TTL — cache entry is now stale
     vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
-    const result = await resolver.resolve({ name: "stale.eth" });
+    const result = await resolver.resolve({ name: "stale.bso" });
 
     // Should return the stale cached value immediately
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
@@ -570,7 +570,7 @@ describe("BsoResolver stale-while-revalidate", () => {
     await new Promise((r) => queueMicrotask(r));
 
     // Now should get updated value (cache was refreshed in background)
-    const freshResult = await resolver.resolve({ name: "stale.eth" });
+    const freshResult = await resolver.resolve({ name: "stale.bso" });
     expect(freshResult).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
 
     await resolver.destroy();
@@ -581,8 +581,8 @@ describe("BsoResolver stale-while-revalidate", () => {
 
     // Two concurrent resolves for the same name with no cache
     const [r1, r2] = await Promise.all([
-      resolver.resolve({ name: "dedup.eth" }),
-      resolver.resolve({ name: "dedup.eth" }),
+      resolver.resolve({ name: "dedup.bso" }),
+      resolver.resolve({ name: "dedup.bso" }),
     ]);
 
     expect(r1).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
@@ -599,7 +599,7 @@ describe("BsoResolver stale-while-revalidate", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     // First call populates cache
-    await resolver.resolve({ name: "fail.eth" });
+    await resolver.resolve({ name: "fail.bso" });
 
     // Now make ENS fail for background refresh
     const mockGetEnsText = getMockGetEnsText();
@@ -607,7 +607,7 @@ describe("BsoResolver stale-while-revalidate", () => {
 
     // Advance past TTL — triggers background refresh that will fail
     vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
-    const result = await resolver.resolve({ name: "fail.eth" });
+    const result = await resolver.resolve({ name: "fail.bso" });
 
     // Should still return the stale cached value
     expect(result).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
@@ -617,7 +617,7 @@ describe("BsoResolver stale-while-revalidate", () => {
     await new Promise((r) => queueMicrotask(r));
 
     // Cache should still have the original value (not corrupted by failed refresh)
-    const afterFailure = await resolver.resolve({ name: "fail.eth" });
+    const afterFailure = await resolver.resolve({ name: "fail.bso" });
     expect(afterFailure).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
 
     await resolver.destroy();

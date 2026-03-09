@@ -1,8 +1,6 @@
 # @bitsocial/bso-resolver
 
-Resolve `.bso` and `.eth` domain names via ENS `bitsocial` TXT records.
-
-`.bso` is an alias for `.eth` -- names are normalized before resolution.
+Resolve `.bso` domain names via `bitsocial` TXT records.
 
 ## Install
 
@@ -10,11 +8,7 @@ Resolve `.bso` and `.eth` domain names via ENS `bitsocial` TXT records.
 npm install @bitsocial/bso-resolver
 ```
 
-Or install directly from git:
 
-```bash
-npm install git+ssh://git@github.com:bitsocialhq/bso-resolver.git
-```
 
 ## With pkc-js
 
@@ -53,7 +47,6 @@ const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
 // Check if a name can be resolved
 resolver.canResolve({ name: "example.bso" }); // true
-resolver.canResolve({ name: "example.eth" }); // true
 resolver.canResolve({ name: "example.com" }); // false
 
 // Resolve a name
@@ -98,9 +91,9 @@ const resolver = new BsoResolver({
 
 #### `resolver.resolve({ name, abortSignal? }): Promise<{ publicKey: string, ...otherFields } | undefined>`
 
-Resolves a `.bso` or `.eth` name by looking up the `bitsocial` TXT record on ENS.
+Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
-- **`name`** - The domain name to resolve (e.g. `"example.bso"`, `"example.eth"`)
+- **`name`** - The domain name to resolve (e.g. `"example.bso"`)
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns a parsed object from the `bitsocial` TXT record, or `undefined` if not found.
@@ -111,7 +104,7 @@ Supported TXT value formats:
 
 #### `resolver.canResolve({ name }): boolean`
 
-Returns `true` if the name ends with `.bso` or `.eth` (case-insensitive).
+Returns `true` if the name ends with `.bso` (case-insensitive).
 
 #### `resolver.destroy(): Promise<void>`
 
@@ -121,15 +114,15 @@ After `destroy()`, calling `resolve()` will throw.
 
 ### `canResolveBso({ name: string }): boolean`
 
-Returns `true` if the name ends with `.bso` or `.eth` (case-insensitive).
+Returns `true` if the name ends with `.bso` (case-insensitive).
 
 ### `isBsoAliasDomain(address: string): boolean`
 
-Returns `true` if the address ends with `.bso` or `.eth`.
+Returns `true` if the address ends with `.bso`.
 
 ### `normalizeBsoAliasDomain(address: string): string`
 
-Converts a `.bso` suffix to `.eth`. Leaves `.eth` addresses unchanged.
+Normalizes a `.bso` name for ENS resolution.
 
 ## Cache behavior
 

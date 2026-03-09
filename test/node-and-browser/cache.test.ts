@@ -53,30 +53,30 @@ describe("createInMemoryCache", () => {
 
   it("stores and retrieves entries", async () => {
     const cache = createInMemoryCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY);
   });
 
   it("overwrites existing entries", async () => {
     const cache = createInMemoryCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.set("example.eth", SAMPLE_ENTRY_WITH_METADATA);
-    expect(await cache.get("example.eth")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.set("example.bso", SAMPLE_ENTRY_WITH_METADATA);
+    expect(await cache.get("example.bso")).toEqual(SAMPLE_ENTRY_WITH_METADATA);
   });
 
   it("deletes entries", async () => {
     const cache = createInMemoryCache();
-    await cache.set("example.eth", SAMPLE_ENTRY);
-    await cache.delete("example.eth");
-    expect(await cache.get("example.eth")).toBeUndefined();
+    await cache.set("example.bso", SAMPLE_ENTRY);
+    await cache.delete("example.bso");
+    expect(await cache.get("example.bso")).toBeUndefined();
   });
 
   it("clears all entries on destroy", async () => {
     const cache = createInMemoryCache();
-    await cache.set("a.eth", SAMPLE_ENTRY);
-    await cache.set("b.eth", SAMPLE_ENTRY);
+    await cache.set("a.bso", SAMPLE_ENTRY);
+    await cache.set("b.bso", SAMPLE_ENTRY);
     await cache.destroy();
-    expect(await cache.get("a.eth")).toBeUndefined();
-    expect(await cache.get("b.eth")).toBeUndefined();
+    expect(await cache.get("a.bso")).toBeUndefined();
+    expect(await cache.get("b.bso")).toBeUndefined();
   });
 });
