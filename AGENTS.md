@@ -26,3 +26,4 @@ After any change to `src/` or `package.json`, run `npm test` to make sure nothin
 - **Fully typed TypeScript** with `strict: true`
 - **Add tests** for all new features and bug fixes
 - **Stateless** - No client caching; each call creates a fresh viem client
+- **Exact dependency versions** - No `^` or `~` prefixes in package.json
