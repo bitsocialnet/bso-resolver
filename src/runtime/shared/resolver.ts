@@ -4,7 +4,7 @@ import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import type { CacheEntry, ResolverCache } from "./cache.js";
 
-const log = Logger("bso-resolver:resolver");
+const log = Logger("bitsocial:bso-resolver");
 
 export interface CanResolveBsoArgs {
   name: string;
