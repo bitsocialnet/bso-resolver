@@ -130,12 +130,6 @@ Returns an object compatible with plebbit-js's `NameResolverSchema`.
 
 All cache entries expire after 1 hour (TTL).
 
-When using SQLite persistence, install `better-sqlite3` as a peer dependency:
-
-```bash
-npm install better-sqlite3
-```
-
 ## Publishing to npm
 
 This package is not yet published to npm. To set up automated publishing:
