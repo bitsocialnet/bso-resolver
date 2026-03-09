@@ -3,7 +3,7 @@ import {
   isBsoAliasDomain,
   normalizeBsoAliasDomain,
   canResolveBso,
-} from "../src/index.js";
+} from "@bitsocial/bso-resolver";
 
 describe("isBsoAliasDomain", () => {
   it("returns true for .eth domains", () => {

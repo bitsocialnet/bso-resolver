@@ -6,9 +6,11 @@ export default defineConfig({
     projects: [
       {
         test: {
-          exclude: ["test/**/*.browser.test.ts"],
           globals: true,
-          include: ["test/**/*.test.ts"],
+          include: [
+            "test/node/**/*.test.ts",
+            "test/node-and-browser/**/*.test.ts",
+          ],
           name: "node",
           testTimeout: 30_000,
         },
@@ -25,7 +27,10 @@ export default defineConfig({
             provider: playwright(),
           },
           globals: true,
-          include: ["test/**/*.browser.test.ts"],
+          include: [
+            "test/browser/**/*.test.ts",
+            "test/node-and-browser/**/*.test.ts",
+          ],
           name: "browser",
           testTimeout: 30_000,
         },

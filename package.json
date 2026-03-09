@@ -29,6 +29,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
     "test:browser:install": "playwright install chromium firefox",

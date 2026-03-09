@@ -17,37 +17,22 @@ vi.mock("viem/ens", () => ({
   normalize: (name: string) => name.toLowerCase(),
 }));
 
-vi.mock("../src/runtime/node/cache.js", () => {
-  function makeCache() {
-    const store = new Map();
-    return {
-      get: vi.fn((key: string) => Promise.resolve(store.get(key))),
-      set: vi.fn((key: string, entry: unknown) => {
-        store.set(key, entry);
-        return Promise.resolve();
-      }),
-      delete: vi.fn((key: string) => {
-        store.delete(key);
-        return Promise.resolve();
-      }),
-      destroy: vi.fn(() => {
-        store.clear();
-        return Promise.resolve();
-      }),
-    };
-  }
-
-  return {
-    createCache: vi.fn(() => Promise.resolve(makeCache())),
-    isCacheStale: vi.fn(() => true),
-  };
-});
-
 import { createPublicClient, http, webSocket } from "viem";
-import { BsoResolver, _resetRegistries } from "../src/index.js";
-import { isCacheStale } from "../src/runtime/node/cache.js";
+import { BsoResolver, _resetRegistries } from "@bitsocial/bso-resolver";
 
 const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
+
+const CACHE_DB_NAME = "bso-resolver-cache";
+
+async function cleanupIndexedDB(): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase(CACHE_DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
+}
 
 function getMockGetEnsText(): Mock {
   const client = (createPublicClient as Mock).mock.results.at(-1)?.value;
@@ -66,6 +51,7 @@ describe("BsoResolver", () => {
 
   afterEach(async () => {
     _resetRegistries();
+    await cleanupIndexedDB();
   });
 
   it('resolves .eth name with provider="viem"', async () => {
@@ -307,6 +293,7 @@ describe("BsoResolver abort and destroy", () => {
 
   afterEach(async () => {
     _resetRegistries();
+    await cleanupIndexedDB();
   });
 
   it("rejects immediately with AbortError for pre-aborted signal", async () => {
@@ -452,8 +439,10 @@ describe("BsoResolver lifecycle", () => {
     }));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     _resetRegistries();
+    await cleanupIndexedDB();
+    vi.restoreAllMocks();
   });
 
   it("throws after destroy() is called", async () => {
@@ -513,18 +502,16 @@ describe("BsoResolver lifecycle", () => {
   });
 
   it("returns cached result without hitting ENS", async () => {
-    (isCacheStale as Mock).mockReturnValue(false);
-
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     // First call populates cache
-    await resolver.resolve({ name: "example.eth" });
+    await resolver.resolve({ name: "cached.eth" });
 
     const mockGetEnsText = getMockGetEnsText();
     mockGetEnsText.mockClear();
 
-    // Second call should use cache
-    await resolver.resolve({ name: "example.eth" });
+    // Second call should use cache (entry was just written, so it's fresh)
+    await resolver.resolve({ name: "cached.eth" });
     expect(mockGetEnsText).not.toHaveBeenCalled();
 
     await resolver.destroy();
@@ -533,23 +520,30 @@ describe("BsoResolver lifecycle", () => {
 
 const UPDATED_PUBLIC_KEY = "12D3KooWGC4xFPBDmMENweb3rPBYDMPSMHpJBGZJGCPFp7TCZGTL";
 
+// Default cache TTL is 1 hour (3_600_000 ms)
+const DEFAULT_CACHE_TTL_MS = 3_600_000;
+
 describe("BsoResolver stale-while-revalidate", () => {
+  let baseTime: number;
+
   beforeEach(() => {
     vi.clearAllMocks();
     _resetRegistries();
+    baseTime = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(baseTime);
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(UPDATED_PUBLIC_KEY),
     }));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
     _resetRegistries();
+    await cleanupIndexedDB();
   });
 
   it("returns stale cached value immediately and refreshes in background", async () => {
-    // First call populates cache (no cache yet, so it blocks)
-    (isCacheStale as Mock).mockReturnValue(true);
-
+    // First call populates cache
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
@@ -561,8 +555,8 @@ describe("BsoResolver stale-while-revalidate", () => {
     const mockGetEnsText = getMockGetEnsText();
     mockGetEnsText.mockReset().mockResolvedValue(UPDATED_PUBLIC_KEY);
 
-    // Mark cache as stale — resolve should return stale value immediately
-    (isCacheStale as Mock).mockReturnValue(true);
+    // Advance past TTL — cache entry is now stale
+    vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
     const result = await resolver.resolve({ name: "stale.eth" });
 
     // Should return the stale cached value immediately
@@ -572,10 +566,10 @@ describe("BsoResolver stale-while-revalidate", () => {
     expect(mockGetEnsText).toHaveBeenCalledTimes(1);
 
     // Wait for background refresh to complete
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => queueMicrotask(r));
+    await new Promise((r) => queueMicrotask(r));
 
-    // Now mark cache as fresh — should get updated value
-    (isCacheStale as Mock).mockReturnValue(false);
+    // Now should get updated value (cache was refreshed in background)
     const freshResult = await resolver.resolve({ name: "stale.eth" });
     expect(freshResult).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
 
@@ -583,8 +577,6 @@ describe("BsoResolver stale-while-revalidate", () => {
   });
 
   it("deduplicates concurrent resolves for the same name", async () => {
-    (isCacheStale as Mock).mockReturnValue(true);
-
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     // Two concurrent resolves for the same name with no cache
@@ -607,25 +599,24 @@ describe("BsoResolver stale-while-revalidate", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     // First call populates cache
-    (isCacheStale as Mock).mockReturnValue(true);
     await resolver.resolve({ name: "fail.eth" });
 
     // Now make ENS fail for background refresh
     const mockGetEnsText = getMockGetEnsText();
     mockGetEnsText.mockReset().mockRejectedValue(new Error("RPC timeout"));
 
-    // Mark stale — triggers background refresh that will fail
-    (isCacheStale as Mock).mockReturnValue(true);
+    // Advance past TTL — triggers background refresh that will fail
+    vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
     const result = await resolver.resolve({ name: "fail.eth" });
 
     // Should still return the stale cached value
     expect(result).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
 
     // Wait for background refresh to settle
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => queueMicrotask(r));
+    await new Promise((r) => queueMicrotask(r));
 
-    // Cache should still have the original stale value (not corrupted)
-    (isCacheStale as Mock).mockReturnValue(false);
+    // Cache should still have the original value (not corrupted by failed refresh)
     const afterFailure = await resolver.resolve({ name: "fail.eth" });
     expect(afterFailure).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
 

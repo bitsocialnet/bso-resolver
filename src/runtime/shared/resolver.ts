@@ -303,6 +303,12 @@ export abstract class BaseBsoResolver {
     }
 
     const cache = await this._cachePromise!;
+
+    // Re-check after await — destroy() may have been called while waiting for the cache
+    if (this._destroyed) {
+      throw createAbortError();
+    }
+
     const cached = await cache.get(name);
 
     if (cached) {

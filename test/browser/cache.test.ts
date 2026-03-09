@@ -3,8 +3,8 @@ import {
   createCache,
   createIndexedDBCache,
   type CacheEntry,
-} from "../src/runtime/browser/cache.js";
-import { BsoResolver } from "../src/browser.js";
+} from "../../src/runtime/browser/cache.js";
+import { BsoResolver } from "../../src/browser.js";
 
 const CACHE_DB_NAME = "bso-resolver-cache";
 
