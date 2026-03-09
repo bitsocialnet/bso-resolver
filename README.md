@@ -78,7 +78,7 @@ await resolver2.destroy();
 Creates a resolver instance with a shared viem client and persistent cache. Both are lazily initialized on the first `resolve()` call.
 
 - **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).hostname}` ``)
-- **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL
+- **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL or a Websocket RPC URL
 - **`dataPath`** (optional, Node only) - Enables SQLite persistence for the cache. Browser builds do not support SQLite and will throw if `dataPath` is provided.
 
 ```ts
@@ -111,18 +111,6 @@ Returns `true` if the name ends with `.bso` (case-insensitive).
 Releases shared resources (viem client, cache/DB connection). The underlying resource is only closed when the last resolver using it is destroyed. Idempotent — safe to call multiple times.
 
 After `destroy()`, calling `resolve()` will throw.
-
-### `canResolveBso({ name: string }): boolean`
-
-Returns `true` if the name ends with `.bso` (case-insensitive).
-
-### `isBsoAliasDomain(address: string): boolean`
-
-Returns `true` if the address ends with `.bso`.
-
-### `normalizeBsoAliasDomain(address: string): string`
-
-Normalizes a `.bso` name for ENS resolution.
 
 ## Cache behavior
 
@@ -202,10 +190,6 @@ This package is not yet published to npm. To set up automated publishing:
 5. Apply the stashed changes (`git stash pop`) which add the `.github/workflows/publish.yml` workflow and `publishConfig` to `package.json`
 
 After setup, releases created by `release-it` will automatically trigger npm publishing with provenance via OIDC trusted publishing.
-
-## Future Considerations
-
-- WebSocket provider lifecycle/cancellation support is intentionally deferred.
 
 ## License
 
