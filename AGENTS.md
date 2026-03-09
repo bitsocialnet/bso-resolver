@@ -27,3 +27,4 @@ Make sure to add tests when you add new features
 - **Fully typed TypeScript** with `strict: true`
 - **Add tests** for all new features and bug fixes
 - **Exact dependency versions** - No `^` or `~` prefixes in package.json
+- **One resolver per provider URL** - Do not create multiple BsoResolver instances with the same provider URL. Each resolver owns its transport connection and closes it on destroy().

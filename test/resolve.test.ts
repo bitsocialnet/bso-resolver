@@ -5,7 +5,8 @@ vi.mock("viem", () => ({
   createPublicClient: vi.fn(() => ({
     getEnsText: vi.fn(),
   })),
-  http: vi.fn(() => "mock-transport"),
+  http: vi.fn(() => "mock-http-transport"),
+  webSocket: vi.fn(() => "mock-ws-transport"),
 }));
 
 vi.mock("viem/chains", () => ({
@@ -42,7 +43,7 @@ vi.mock("../src/runtime/node/cache.js", () => {
   };
 });
 
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, webSocket } from "viem";
 import { BsoResolver, _resetRegistries } from "../src/index.js";
 import { isCacheStale } from "../src/runtime/node/cache.js";
 
@@ -76,7 +77,7 @@ describe("BsoResolver", () => {
     const result = await resolver.resolve({ name: "example.eth" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(http).toHaveBeenCalledWith();
+    expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -123,7 +124,35 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
     await resolver.resolve({ name: "example.eth" });
 
-    expect(http).toHaveBeenCalledWith("https://rpc.example.com");
+    expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchOptions: { signal: expect.any(AbortSignal) } });
+
+    await resolver.destroy();
+  });
+
+  it("uses webSocket() transport for wss:// provider URLs", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
+    await resolver.resolve({ name: "example.eth" });
+
+    expect(webSocket).toHaveBeenCalledWith("wss://rpc.example.com", { reconnect: false });
+    expect(http).not.toHaveBeenCalled();
+
+    await resolver.destroy();
+  });
+
+  it("uses webSocket() transport for ws:// provider URLs", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-ws", provider: "ws://rpc.example.com" });
+    await resolver.resolve({ name: "example.eth" });
+
+    expect(webSocket).toHaveBeenCalledWith("ws://rpc.example.com", { reconnect: false });
+    expect(http).not.toHaveBeenCalled();
 
     await resolver.destroy();
   });
@@ -265,6 +294,20 @@ describe("BsoResolver", () => {
 
     await resolver.destroy();
   });
+});
+
+describe("BsoResolver abort and destroy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetRegistries();
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn(),
+    }));
+  });
+
+  afterEach(async () => {
+    _resetRegistries();
+  });
 
   it("rejects immediately with AbortError for pre-aborted signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
@@ -309,6 +352,94 @@ describe("BsoResolver", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 
     await resolver.destroy();
+  });
+
+  it("destroy() rejects all in-flight resolves with AbortError", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn(
+        () =>
+          new Promise(() => {
+            // Intentionally unresolved to simulate a long-running request.
+          })
+      ),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    const pending1 = resolver.resolve({ name: "a.eth" });
+    const pending2 = resolver.resolve({ name: "b.eth" });
+
+    await resolver.destroy();
+
+    await expect(pending1).rejects.toMatchObject({ name: "AbortError" });
+    await expect(pending2).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("aborting one concurrent resolve does not cancel others for same name", async () => {
+    let resolveEns!: (value: string) => void;
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn(
+        () => new Promise<string>((r) => { resolveEns = r; })
+      ),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    const controller = new AbortController();
+
+    // Two concurrent resolves for the same name — one with abort signal
+    const p1 = resolver.resolve({ name: "example.eth", abortSignal: controller.signal });
+    const p2 = resolver.resolve({ name: "example.eth" });
+
+    // Abort the first caller
+    controller.abort();
+    await expect(p1).rejects.toMatchObject({ name: "AbortError" });
+
+    // Resolve the underlying request — second caller should get the result
+    resolveEns(VALID_PUBLIC_KEY);
+    const result = await p2;
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+
+    await resolver.destroy();
+  });
+
+  it("destroy() closes WebSocket connection", async () => {
+    const mockClose = vi.fn();
+    const mockRpcClient = { close: mockClose };
+
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockResolvedValue(mockRpcClient),
+      },
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
+    await resolver.resolve({ name: "example.eth" });
+
+    await resolver.destroy();
+
+    expect(mockClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes destroy signal to http() transport fetchOptions", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "example.eth" });
+
+    // Capture the signal passed to http()
+    const httpCall = (http as Mock).mock.calls[0];
+    const signal = httpCall[1]?.fetchOptions?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false);
+
+    await resolver.destroy();
+
+    // After destroy, the signal should be aborted
+    expect(signal.aborted).toBe(true);
   });
 });
 
@@ -367,37 +498,10 @@ describe("BsoResolver lifecycle", () => {
     expect(resolver.provider).toBe("https://rpc.example.com");
     expect(resolver.dataPath).toBe("/tmp/test");
   });
-});
 
-describe("BsoResolver shared resources", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    _resetRegistries();
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-    }));
-  });
-
-  afterEach(() => {
-    _resetRegistries();
-  });
-
-  it("shares viem client between resolvers with same provider", async () => {
-    const r1 = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const r2 = new BsoResolver({ key: "bso-viem", provider: "viem" });
-
-    await r1.resolve({ name: "a.eth" });
-    await r2.resolve({ name: "b.eth" });
-
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
-
-    await r1.destroy();
-    await r2.destroy();
-  });
-
-  it("creates separate clients for different providers", async () => {
-    const r1 = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const r2 = new BsoResolver({ key: "bso-other", provider: "https://other.rpc" });
+  it("each resolver creates its own client", async () => {
+    const r1 = new BsoResolver({ key: "r1", provider: "viem" });
+    const r2 = new BsoResolver({ key: "r2", provider: "viem" });
 
     await r1.resolve({ name: "a.eth" });
     await r2.resolve({ name: "b.eth" });
@@ -405,19 +509,6 @@ describe("BsoResolver shared resources", () => {
     expect(createPublicClient).toHaveBeenCalledTimes(2);
 
     await r1.destroy();
-    await r2.destroy();
-  });
-
-  it("keeps client alive while any resolver still uses it", async () => {
-    const r1 = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const r2 = new BsoResolver({ key: "bso-viem", provider: "viem" });
-
-    await r1.resolve({ name: "a.eth" });
-    await r2.resolve({ name: "b.eth" });
-    await r1.destroy();
-
-    // r2 should still work
-    await r2.resolve({ name: "c.eth" });
     await r2.destroy();
   });
 

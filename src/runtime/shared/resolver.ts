@@ -1,5 +1,5 @@
 import Logger from "@plebbit/plebbit-logger";
-import { createPublicClient, http, type PublicClient } from "viem";
+import { createPublicClient, http, webSocket, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import type { CacheEntry, ResolverCache } from "./cache.js";
@@ -27,8 +27,7 @@ export interface ResolverBindings {
 }
 
 export interface ResolverRuntime {
-  acquireClient(provider: string): PublicClient;
-  releaseClient(provider: string): void;
+  createClient(provider: string, destroySignal: AbortSignal): PublicClient;
   acquireCache(dataPath?: string): Promise<ResolverCache>;
   releaseCache(dataPath?: string): Promise<void>;
   isCacheStale(entry: CacheEntry, ttlMs?: number): boolean;
@@ -58,6 +57,10 @@ function throwIfAborted(abortSignal?: AbortSignal): void {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function isWebSocketUrl(url: string): boolean {
+  return url.startsWith("ws://") || url.startsWith("wss://");
 }
 
 function isValidIpnsPublicKey(value: string): boolean {
@@ -151,11 +154,9 @@ async function withAbortSignal<T>(
 async function resolveWithClient({
   client,
   name,
-  abortSignal,
 }: {
   client: PublicClient;
   name: string;
-  abortSignal?: AbortSignal;
 }): Promise<BsoResolveResult | undefined> {
   const resolvedName = name.includes(".") ? name : `${name}.bso`;
 
@@ -166,16 +167,11 @@ async function resolveWithClient({
   const ethName = normalizeBsoAliasDomain(resolvedName);
   const normalized = normalize(ethName);
 
-  throwIfAborted(abortSignal);
-
   try {
-    const result = await withAbortSignal(
-      client.getEnsText({
-        name: normalized,
-        key: "bitsocial",
-      }),
-      abortSignal
-    );
+    const result = await client.getEnsText({
+      name: normalized,
+      key: "bitsocial",
+    });
 
     if (result == null) {
       return undefined;
@@ -194,46 +190,32 @@ async function resolveWithClient({
   }
 }
 
-interface ClientRegistryEntry {
-  client: PublicClient;
-  refCount: number;
-}
-
 interface CacheRegistryEntry {
   cachePromise: Promise<ResolverCache>;
   refCount: number;
 }
 
 class ResolverRuntimeImpl implements ResolverRuntime {
-  private readonly createCache: ResolverBindings["createCache"];
+  private readonly _createCache: ResolverBindings["createCache"];
   readonly isCacheStale: ResolverBindings["isCacheStale"];
-  private readonly clientRegistry = new Map<string, ClientRegistryEntry>();
   private readonly cacheRegistry = new Map<string, CacheRegistryEntry>();
 
   constructor({ createCache, isCacheStale }: ResolverBindings) {
-    this.createCache = createCache;
+    this._createCache = createCache;
     this.isCacheStale = isCacheStale;
   }
 
-  acquireClient(provider: string): PublicClient {
-    const existing = this.clientRegistry.get(provider);
-    if (existing) {
-      existing.refCount++;
-      return existing.client;
-    }
-    const transport = provider === "viem" ? http() : http(provider);
-    const client = createPublicClient({ chain: mainnet, transport });
-    this.clientRegistry.set(provider, { client, refCount: 1 });
-    return client;
-  }
+  createClient(provider: string, destroySignal: AbortSignal): PublicClient {
+    const url = provider === "viem" ? undefined : provider;
+    let transport;
 
-  releaseClient(provider: string): void {
-    const entry = this.clientRegistry.get(provider);
-    if (!entry) return;
-    entry.refCount--;
-    if (entry.refCount <= 0) {
-      this.clientRegistry.delete(provider);
+    if (url && isWebSocketUrl(url)) {
+      transport = webSocket(url, { reconnect: false });
+    } else {
+      transport = http(url, { fetchOptions: { signal: destroySignal } });
     }
+
+    return createPublicClient({ chain: mainnet, transport });
   }
 
   acquireCache(dataPath?: string): Promise<ResolverCache> {
@@ -243,7 +225,7 @@ class ResolverRuntimeImpl implements ResolverRuntime {
       existing.refCount++;
       return existing.cachePromise;
     }
-    const cachePromise = this.createCache({ dataPath });
+    const cachePromise = this._createCache({ dataPath });
     this.cacheRegistry.set(key, { cachePromise, refCount: 1 });
     return cachePromise;
   }
@@ -261,7 +243,6 @@ class ResolverRuntimeImpl implements ResolverRuntime {
   }
 
   resetRegistries(): void {
-    this.clientRegistry.clear();
     this.cacheRegistry.clear();
   }
 
@@ -286,6 +267,7 @@ export abstract class BaseBsoResolver {
   readonly dataPath: string | undefined;
 
   private readonly runtime: ResolverRuntime;
+  private readonly _destroyController = new AbortController();
   private _client: PublicClient | null = null;
   private _cachePromise: Promise<ResolverCache> | null = null;
   private _initialized = false;
@@ -315,7 +297,7 @@ export abstract class BaseBsoResolver {
     }
 
     if (!this._initialized) {
-      this._client = this.runtime.acquireClient(this.provider);
+      this._client = this.runtime.createClient(this.provider, this._destroyController.signal);
       this._cachePromise = this.runtime.acquireCache(this.dataPath);
       this._initialized = true;
     }
@@ -327,24 +309,30 @@ export abstract class BaseBsoResolver {
       if (!this.runtime.isCacheStale(cached)) {
         return cached.value as BsoResolveResult;
       }
-      // stale — return immediately, refresh in background
+      // stale — return immediately, refresh in background (no user abort signal)
       this._resolveAndCache(cache, name).catch(() => {});
       return cached.value as BsoResolveResult;
     }
 
     // no cache at all — must block and wait
-    return await this._resolveAndCache(cache, name, abortSignal);
+    const sharedPromise = this._resolveAndCache(cache, name);
+
+    // Wrap with combined signal so this caller can be aborted independently
+    const combinedSignal = abortSignal
+      ? AbortSignal.any([this._destroyController.signal, abortSignal])
+      : this._destroyController.signal;
+
+    return await withAbortSignal(sharedPromise, combinedSignal);
   }
 
   private _resolveAndCache(
     cache: ResolverCache,
     name: string,
-    abortSignal?: AbortSignal,
   ): Promise<BsoResolveResult | undefined> {
     const existing = this._pendingResolves.get(name);
     if (existing) return existing;
 
-    const promise = resolveWithClient({ client: this._client!, name, abortSignal })
+    const promise = resolveWithClient({ client: this._client!, name })
       .then(async (result) => {
         if (result) {
           await cache.set(name, { value: result, timestampMs: Date.now() });
@@ -372,7 +360,15 @@ export abstract class BaseBsoResolver {
     if (!this._initialized || this._destroyed) return;
     this._destroyed = true;
 
-    this.runtime.releaseClient(this.provider);
+    // Abort all in-flight resolves and cancel HTTP fetches via transport signal
+    this._destroyController.abort();
+
+    // Close WebSocket connection if applicable
+    if (this._client?.transport?.type === "webSocket") {
+      const rpcClient = await (this._client.transport as any).getRpcClient();
+      rpcClient.close();
+    }
+
     await this.runtime.releaseCache(this.dataPath);
 
     this._client = null;
