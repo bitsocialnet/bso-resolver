@@ -370,9 +370,15 @@ export abstract class BaseBsoResolver {
     this._destroyController.abort();
 
     // Close WebSocket connection if applicable
-    if (this._client?.transport?.type === "webSocket") {
-      const rpcClient = await (this._client.transport as any).getRpcClient();
-      rpcClient.close();
+    try {
+      if (this._client?.transport?.type === "webSocket") {
+        const rpcClient = await (this._client.transport as any).getRpcClient();
+        rpcClient.close();
+      }
+    } catch (error) {
+      log.error(
+        `Failed to close WebSocket for provider "${this.provider}": ${error instanceof Error ? error.message : error}`
+      );
     }
 
     await this.runtime.releaseCache(this.dataPath);

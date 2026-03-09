@@ -25,6 +25,7 @@ export default defineConfig({
               { browser: "firefox" },
             ],
             provider: playwright(),
+            screenshotFailures: false,
           },
           globals: true,
           include: [

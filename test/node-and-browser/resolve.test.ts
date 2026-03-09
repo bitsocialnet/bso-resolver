@@ -409,6 +409,50 @@ describe("BsoResolver abort and destroy", () => {
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
+  it("destroy() still releases cache when getRpcClient() rejects", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockRejectedValue(new Error("WebSocket already closed")),
+      },
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
+    await resolver.resolve({ name: "example.bso" });
+
+    // Should not throw — error is swallowed, cache is still cleaned up
+    await resolver.destroy();
+
+    // Verify resolver is fully destroyed
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
+  });
+
+  it("destroy() still releases cache when WebSocket close() throws", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockResolvedValue({
+          close: vi.fn(() => { throw new Error("close failed"); }),
+        }),
+      },
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
+    await resolver.resolve({ name: "example.bso" });
+
+    // Should not throw — error is swallowed, cache is still cleaned up
+    await resolver.destroy();
+
+    // Verify resolver is fully destroyed
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
+  });
+
   it("passes destroy signal to http() transport fetchOptions", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),

@@ -13,6 +13,8 @@ function openIndexedDB(): Promise<IDBDatabase> {
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    request.onblocked = () =>
+      reject(new DOMException('IndexedDB "bso-resolver-cache" open blocked by another connection.', "AbortError"));
   });
 }
 
@@ -29,6 +31,7 @@ export async function createIndexedDBCache(): Promise<ResolverCache> {
       const request = fn(store);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
+      tx.onabort = () => reject(tx.error ?? new DOMException("Transaction aborted", "AbortError"));
     });
   }
 
