@@ -36,6 +36,9 @@ const resolvers = chainProviderUrls.map((url) => new BsoResolver({
 
 const pkc = await Pkc({ nameResolvers: resolvers });
 
+// Access a resolver instance later:
+const resolver = pkc.clients.nameResolvers["bso-viem"].resolver;
+
 // Later, when shutting down:
 await pkc.destroy(); // should cascade to resolver.destroy() for each resolver
 ```
