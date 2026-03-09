@@ -11,6 +11,7 @@ export interface ResolverCache {
   get(key: string): Promise<CacheEntry | undefined>;
   set(key: string, entry: CacheEntry): Promise<void>;
   delete(key: string): Promise<void>;
+  destroy(): Promise<void>;
 }
 
 // --- Cache helpers ---
@@ -29,6 +30,7 @@ export function createInMemoryCache(): ResolverCache {
     async get(key) { return store.get(key); },
     async set(key, entry) { store.set(key, entry); },
     async delete(key) { store.delete(key); },
+    async destroy() { store.clear(); },
   };
 }
 
@@ -48,6 +50,7 @@ export async function createSqliteCache(dataPath: string): Promise<ResolverCache
 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS bso_cache (
@@ -79,6 +82,10 @@ export async function createSqliteCache(dataPath: string): Promise<ResolverCache
 
     async delete(key: string): Promise<void> {
       deleteStmt.run(key);
+    },
+
+    async destroy(): Promise<void> {
+      db.close();
     },
   };
 }
@@ -135,6 +142,10 @@ export async function createIndexedDBCache(): Promise<ResolverCache> {
 
     async delete(key: string): Promise<void> {
       await withTransaction("readwrite", (store) => store.delete(key));
+    },
+
+    async destroy(): Promise<void> {
+      db.close();
     },
   };
 }

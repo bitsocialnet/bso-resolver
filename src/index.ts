@@ -11,18 +11,13 @@ export interface CanResolveBsoArgs {
   name: string;
 }
 
-export interface ResolveBsoArgs {
-  name: string;
-  provider: string;
-  abortSignal?: AbortSignal;
-}
-
 export interface BsoResolveResult {
   publicKey: string;
   [key: string]: string;
 }
 
-export interface CreateBsoResolverArgs {
+export interface BsoResolverArgs {
+  key: string;
   provider: string;
   dataPath?: string;
 }
@@ -190,6 +185,78 @@ async function resolveWithClient({
   }
 }
 
+// --- Singleton registries (module-private) ---
+
+interface ClientRegistryEntry {
+  client: PublicClient;
+  refCount: number;
+}
+
+interface CacheRegistryEntry {
+  cachePromise: Promise<ResolverCache>;
+  refCount: number;
+}
+
+const clientRegistry = new Map<string, ClientRegistryEntry>();
+const cacheRegistry = new Map<string, CacheRegistryEntry>();
+
+function cacheRegistryKey(dataPath?: string): string {
+  if (dataPath) return `sqlite:${dataPath}`;
+  if (typeof indexedDB !== "undefined") return "indexeddb";
+  return "memory";
+}
+
+function acquireClient(provider: string): PublicClient {
+  const existing = clientRegistry.get(provider);
+  if (existing) {
+    existing.refCount++;
+    return existing.client;
+  }
+  const transport = provider === "viem" ? http() : http(provider);
+  const client = createPublicClient({ chain: mainnet, transport });
+  clientRegistry.set(provider, { client, refCount: 1 });
+  return client;
+}
+
+function releaseClient(provider: string): void {
+  const entry = clientRegistry.get(provider);
+  if (!entry) return;
+  entry.refCount--;
+  if (entry.refCount <= 0) {
+    clientRegistry.delete(provider);
+  }
+}
+
+function acquireCache(dataPath?: string): Promise<ResolverCache> {
+  const key = cacheRegistryKey(dataPath);
+  const existing = cacheRegistry.get(key);
+  if (existing) {
+    existing.refCount++;
+    return existing.cachePromise;
+  }
+  const cachePromise = createCache({ dataPath });
+  cacheRegistry.set(key, { cachePromise, refCount: 1 });
+  return cachePromise;
+}
+
+async function releaseCache(dataPath?: string): Promise<void> {
+  const key = cacheRegistryKey(dataPath);
+  const entry = cacheRegistry.get(key);
+  if (!entry) return;
+  entry.refCount--;
+  if (entry.refCount <= 0) {
+    cacheRegistry.delete(key);
+    const cache = await entry.cachePromise;
+    await cache.destroy();
+  }
+}
+
+/** @internal — for testing only */
+export function _resetRegistries(): void {
+  clientRegistry.clear();
+  cacheRegistry.clear();
+}
+
 // --- Main API ---
 
 export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
@@ -197,74 +264,64 @@ export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
 }
 
 /**
- * Stateless resolution — creates a fresh viem client per call, no caching.
- * Use `createBsoResolver` for a stateful resolver with caching and singleton client.
- */
-export async function resolveBso({
-  name,
-  provider,
-  abortSignal,
-}: ResolveBsoArgs): Promise<BsoResolveResult | undefined> {
-  throwIfAborted(abortSignal);
-
-  const transport = provider === "viem"
-    ? abortSignal
-      ? http(undefined, { fetchOptions: { signal: abortSignal } })
-      : http()
-    : abortSignal
-      ? http(provider, { fetchOptions: { signal: abortSignal } })
-      : http(provider);
-
-  const client = createPublicClient({
-    chain: mainnet,
-    transport,
-  });
-
-  try {
-    return await resolveWithClient({ client, name, abortSignal });
-  } catch (error) {
-    if (error instanceof Error && (error as any).details) {
-      (error as any).details.provider = provider;
-    }
-    throw error;
-  }
-}
-
-/**
- * Creates a stateful BSO resolver with a singleton viem client and in-memory cache.
- * Both the client and cache are lazily initialized on the first `resolve()` call
- * and persist for the lifetime of the resolver.
+ * BSO name resolver with shared viem client and persistent cache.
  *
- * Returns an object compatible with plebbit-js's NameResolverSchema.
+ * Resources (viem client, cache/DB connection) are lazily initialized on the
+ * first `resolve()` call and shared across instances with the same `provider`
+ * or `dataPath` via internal reference-counted registries.
+ *
+ * Call `destroy()` when done to release resources. The underlying client or
+ * DB connection is only closed when the last resolver using it is destroyed.
  */
-export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs) {
-  let client: PublicClient | null = null;
-  let cachePromise: Promise<ResolverCache> | null = null;
+export class BsoResolver {
+  readonly key: string;
+  readonly provider: string;
+  readonly dataPath: string | undefined;
 
-  return {
-    key: "bso-resolver",
-    provider,
-    dataPath,
-    canResolve: ({ name }: CanResolveBsoArgs) => canResolveBso({ name }),
-    resolve: async ({ name, abortSignal }: { name: string; provider: string; abortSignal?: AbortSignal }) => {
-      // Lazy init singletons on first call
-      if (!client) {
-        const transport = provider === "viem" ? http() : http(provider);
-        client = createPublicClient({ chain: mainnet, transport });
-      }
-      if (!cachePromise) {
-        cachePromise = createCache({ dataPath });
-      }
-      const cache = await cachePromise;
+  private _client: PublicClient | null = null;
+  private _cachePromise: Promise<ResolverCache> | null = null;
+  private _initialized = false;
+  private _destroyed = false;
 
-      // Check cache
-      const cached = await cache.get(name);
-      if (cached && !isCacheStale(cached)) {
-        return cached.value;
-      }
+  constructor({ key, provider, dataPath }: BsoResolverArgs) {
+    this.key = key;
+    this.provider = provider;
+    this.dataPath = dataPath;
+  }
 
-      // Resolve using singleton client
-      const result = await resolveWithClient({ client, name, abortSignal });
+  canResolve({ name }: CanResolveBsoArgs): boolean {
+    return canResolveBso({ name });
+  }
+
+  async resolve({
+    name,
+    abortSignal,
+  }: {
+    name: string;
+    abortSignal?: AbortSignal;
+  }): Promise<BsoResolveResult | undefined> {
+    if (this._destroyed) {
+      throw new Error("Cannot resolve after destroy() has been called.");
+    }
+
+    // Lazy acquisition of shared resources on first call
+    if (!this._initialized) {
+      this._client = acquireClient(this.provider);
+      this._cachePromise = acquireCache(this.dataPath);
+      this._initialized = true;
+    }
+
+    const cache = await this._cachePromise!;
+
+    // Check cache
+    const cached = await cache.get(name);
+    if (cached && !isCacheStale(cached)) {
+      return cached.value as BsoResolveResult;
+    }
+
+    // Resolve using shared client
+    try {
+      const result = await resolveWithClient({ client: this._client!, name, abortSignal });
 
       // Store in cache
       if (result) {
@@ -272,6 +329,22 @@ export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs)
       }
 
       return result;
-    },
-  };
+    } catch (error) {
+      if (error instanceof Error && (error as any).details) {
+        (error as any).details.provider = this.provider;
+      }
+      throw error;
+    }
+  }
+
+  async destroy(): Promise<void> {
+    if (!this._initialized || this._destroyed) return;
+    this._destroyed = true;
+
+    releaseClient(this.provider);
+    await releaseCache(this.dataPath);
+
+    this._client = null;
+    this._cachePromise = null;
+  }
 }

@@ -77,6 +77,15 @@ describe("createInMemoryCache", () => {
     await cache.delete("example.eth");
     expect(await cache.get("example.eth")).toBeUndefined();
   });
+
+  it("clears all entries on destroy", async () => {
+    const cache = createInMemoryCache();
+    await cache.set("a.eth", SAMPLE_ENTRY);
+    await cache.set("b.eth", SAMPLE_ENTRY);
+    await cache.destroy();
+    expect(await cache.get("a.eth")).toBeUndefined();
+    expect(await cache.get("b.eth")).toBeUndefined();
+  });
 });
 
 // --- SQLite cache ---
@@ -126,6 +135,13 @@ describe("createSqliteCache", () => {
     expect(result?.value.network).toBe("mainnet");
   });
 
+  it("closes the database on destroy", async () => {
+    const cache = await createSqliteCache(tmpDir);
+    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.destroy();
+    await expect(cache.get("example.eth")).rejects.toThrow();
+  });
+
   it("creates the .bso-resolver directory inside dataPath", async () => {
     const { existsSync } = await import("node:fs");
     await createSqliteCache(tmpDir);
@@ -164,6 +180,13 @@ describe("createIndexedDBCache", () => {
     await cache.set("example.eth", SAMPLE_ENTRY);
     await cache.delete("example.eth");
     expect(await cache.get("example.eth")).toBeUndefined();
+  });
+
+  it("closes the database on destroy", async () => {
+    const cache = await createIndexedDBCache();
+    await cache.set("example.eth", SAMPLE_ENTRY);
+    await cache.destroy();
+    await expect(cache.get("example.eth")).rejects.toThrow();
   });
 });
 
