@@ -23,6 +23,14 @@
     "prepare": "husky && tsup",
     "release": "HUSKY=0 release-it --config config/.release-it.json"
   },
+  "peerDependencies": {
+    "better-sqlite3": "12.6.2"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "viem": "2.47.0"
   },
@@ -30,8 +38,11 @@
     "@commitlint/cli": "20.4.3",
     "@commitlint/config-conventional": "20.4.3",
     "@release-it/conventional-changelog": "10.0.5",
+    "@types/better-sqlite3": "7.6.13",
+    "better-sqlite3": "12.6.2",
     "commitizen": "4.3.1",
     "cz-conventional-changelog": "3.3.0",
+    "fake-indexeddb": "6.2.5",
     "husky": "9.1.7",
     "release-it": "19.2.4",
     "tsup": "8.5.1",

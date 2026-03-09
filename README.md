@@ -45,6 +45,33 @@ const record3 = await resolveBso({
 });
 ```
 
+## With pkc-js
+
+If you're wiring this into [`pkc-js`](https://github.com/pkc/pkc-js), register one resolver object per provider:
+
+```ts
+import Pkc from "@pkc/pkc-js";
+import { canResolveBso, resolveBso } from "@bitsocial/bso-resolver";
+
+const ethProviders = [
+  "viem",
+  "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
+];
+
+const pkc = await Pkc({
+  nameResolvers: ethProviders.map((provider) => ({
+    key: provider === "viem" ? "eth-viem" : `eth-${new URL(provider).hostname}`,
+    canResolve: canResolveBso,
+    resolve: resolveBso,
+    provider,
+  })),
+});
+```
+
+This matches the `pkc-js` resolver shape: `{ key, canResolve, resolve, provider }`.
+
+If you're still on `@plebbit/plebbit-js`, the same `nameResolvers` setup applies there too; only the package/import name differs.
+
 ## API
 
 ### `canResolveBso({ name: string }): boolean`
@@ -75,6 +102,40 @@ Returns `true` if the address ends with `.bso` or `.eth`.
 
 Converts a `.bso` suffix to `.eth`. Leaves `.eth` addresses unchanged.
 
+### `createBsoResolver({ provider, dataPath? }): Resolver`
+
+Creates a stateful resolver with a singleton viem client and persistent cache. Both are lazily initialized on the first `resolve()` call and persist for the lifetime of the resolver.
+
+```ts
+import { createBsoResolver } from "@bitsocial/bso-resolver";
+
+const resolver = createBsoResolver({
+  provider: "viem",
+  dataPath: "/path/to/data", // optional — enables SQLite persistence
+});
+
+const result = await resolver.resolve({ name: "example.bso", provider: "viem" });
+// { publicKey: "12D3KooW...", ... }
+```
+
+Returns an object compatible with plebbit-js's `NameResolverSchema`.
+
+**Cache behavior:**
+
+| Environment | `dataPath` provided? | Cache backend |
+|---|---|---|
+| Node | Yes | SQLite via `better-sqlite3` (stored at `<dataPath>/.bso-resolver/bso-cache.sqlite`) |
+| Browser | No | IndexedDB (`bso-resolver-cache` database) |
+| Any | No + no IndexedDB | In-memory `Map` |
+
+All cache entries expire after 1 hour (TTL).
+
+When using SQLite persistence, install `better-sqlite3` as a peer dependency:
+
+```bash
+npm install better-sqlite3
+```
+
 ## Publishing to npm
 
 This package is not yet published to npm. To set up automated publishing:
@@ -89,8 +150,7 @@ After setup, releases created by `release-it` will automatically trigger npm pub
 
 ## Future Considerations
 
-- Whether the resolver should maintain internal client caching (reuse viem `PublicClient` instances across calls for the same provider URL) for performance.
-- The resolver is currently stateless and HTTP-only. WebSocket provider lifecycle/cancellation support is intentionally deferred.
+- WebSocket provider lifecycle/cancellation support is intentionally deferred.
 
 ## License
 

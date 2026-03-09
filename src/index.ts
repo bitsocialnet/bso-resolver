@@ -1,8 +1,11 @@
 import { createPublicClient, http, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
+import { createCache, isCacheStale, type ResolverCache } from "./cache.js";
 
 // --- Types ---
+
+export type { CacheEntry, ResolverCache } from "./cache.js";
 
 export interface CanResolveBsoArgs {
   name: string;
@@ -22,17 +25,6 @@ export interface BsoResolveResult {
 export interface CreateBsoResolverArgs {
   provider: string;
   dataPath?: string;
-}
-
-interface CacheEntry {
-  value: BsoResolveResult;
-  timestampMs: number;
-}
-
-interface ResolverCache {
-  get(key: string): CacheEntry | undefined;
-  set(key: string, entry: CacheEntry): void;
-  delete(key: string): void;
 }
 
 // --- Utility functions ---
@@ -150,23 +142,6 @@ async function withAbortSignal<T>(
   });
 }
 
-// --- Cache ---
-
-const DEFAULT_CACHE_TTL_MS = 3600 * 1000; // 1 hour
-
-function createInMemoryCache(): ResolverCache {
-  const store = new Map<string, CacheEntry>();
-  return {
-    get(key) { return store.get(key); },
-    set(key, entry) { store.set(key, entry); },
-    delete(key) { store.delete(key); },
-  };
-}
-
-function isCacheStale(entry: CacheEntry, ttlMs: number = DEFAULT_CACHE_TTL_MS): boolean {
-  return Date.now() - entry.timestampMs > ttlMs;
-}
-
 // --- Core resolution (uses provided client) ---
 
 async function resolveWithClient({
@@ -264,7 +239,7 @@ export async function resolveBso({
  */
 export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs) {
   let client: PublicClient | null = null;
-  let cache: ResolverCache | null = null;
+  let cachePromise: Promise<ResolverCache> | null = null;
 
   return {
     key: "bso-resolver",
@@ -277,15 +252,13 @@ export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs)
         const transport = provider === "viem" ? http() : http(provider);
         client = createPublicClient({ chain: mainnet, transport });
       }
-      if (!cache) {
-        // TODO: when dataPath is provided, use persistent storage (sqlite/files)
-        // TODO: when in browser (typeof indexedDB !== 'undefined'), use IndexedDB
-        // For now, always use in-memory cache
-        cache = createInMemoryCache();
+      if (!cachePromise) {
+        cachePromise = createCache({ dataPath });
       }
+      const cache = await cachePromise;
 
       // Check cache
-      const cached = cache.get(name);
+      const cached = await cache.get(name);
       if (cached && !isCacheStale(cached)) {
         return cached.value;
       }
@@ -295,7 +268,7 @@ export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs)
 
       // Store in cache
       if (result) {
-        cache.set(name, { value: result, timestampMs: Date.now() });
+        await cache.set(name, { value: result, timestampMs: Date.now() });
       }
 
       return result;
