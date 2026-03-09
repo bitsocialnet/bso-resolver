@@ -1,4 +1,4 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 
@@ -17,6 +17,22 @@ export interface ResolveBsoArgs {
 export interface BsoResolveResult {
   publicKey: string;
   [key: string]: string;
+}
+
+export interface CreateBsoResolverArgs {
+  provider: string;
+  dataPath?: string;
+}
+
+interface CacheEntry {
+  value: BsoResolveResult;
+  timestampMs: number;
+}
+
+interface ResolverCache {
+  get(key: string): CacheEntry | undefined;
+  set(key: string, entry: CacheEntry): void;
+  delete(key: string): void;
 }
 
 // --- Utility functions ---
@@ -134,17 +150,34 @@ async function withAbortSignal<T>(
   });
 }
 
-// --- Main API ---
+// --- Cache ---
 
-export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
-  return isBsoAliasDomain(name);
+const DEFAULT_CACHE_TTL_MS = 3600 * 1000; // 1 hour
+
+function createInMemoryCache(): ResolverCache {
+  const store = new Map<string, CacheEntry>();
+  return {
+    get(key) { return store.get(key); },
+    set(key, entry) { store.set(key, entry); },
+    delete(key) { store.delete(key); },
+  };
 }
 
-export async function resolveBso({
+function isCacheStale(entry: CacheEntry, ttlMs: number = DEFAULT_CACHE_TTL_MS): boolean {
+  return Date.now() - entry.timestampMs > ttlMs;
+}
+
+// --- Core resolution (uses provided client) ---
+
+async function resolveWithClient({
+  client,
   name,
-  provider,
   abortSignal,
-}: ResolveBsoArgs): Promise<BsoResolveResult | undefined> {
+}: {
+  client: PublicClient;
+  name: string;
+  abortSignal?: AbortSignal;
+}): Promise<BsoResolveResult | undefined> {
   const resolvedName = name.includes(".") ? name : `${name}.bso`;
 
   if (!isBsoAliasDomain(resolvedName)) {
@@ -155,19 +188,6 @@ export async function resolveBso({
   const normalized = normalize(ethName);
 
   throwIfAborted(abortSignal);
-
-  const transport = provider === "viem"
-    ? abortSignal
-      ? http(undefined, { fetchOptions: { signal: abortSignal } })
-      : http()
-    : abortSignal
-      ? http(provider, { fetchOptions: { signal: abortSignal } })
-      : http(provider);
-
-  const client = createPublicClient({
-    chain: mainnet,
-    transport,
-  });
 
   try {
     const result = await withAbortSignal(
@@ -189,8 +209,96 @@ export async function resolveBso({
     }
 
     if (error instanceof Error) {
-      (error as any).details = { name, resolvedName, provider, ethName, normalized, chain: "mainnet" };
+      (error as any).details = { name, resolvedName, ethName, normalized, chain: "mainnet" };
     }
     throw error;
   }
+}
+
+// --- Main API ---
+
+export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
+  return isBsoAliasDomain(name);
+}
+
+/**
+ * Stateless resolution — creates a fresh viem client per call, no caching.
+ * Use `createBsoResolver` for a stateful resolver with caching and singleton client.
+ */
+export async function resolveBso({
+  name,
+  provider,
+  abortSignal,
+}: ResolveBsoArgs): Promise<BsoResolveResult | undefined> {
+  throwIfAborted(abortSignal);
+
+  const transport = provider === "viem"
+    ? abortSignal
+      ? http(undefined, { fetchOptions: { signal: abortSignal } })
+      : http()
+    : abortSignal
+      ? http(provider, { fetchOptions: { signal: abortSignal } })
+      : http(provider);
+
+  const client = createPublicClient({
+    chain: mainnet,
+    transport,
+  });
+
+  try {
+    return await resolveWithClient({ client, name, abortSignal });
+  } catch (error) {
+    if (error instanceof Error && (error as any).details) {
+      (error as any).details.provider = provider;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Creates a stateful BSO resolver with a singleton viem client and in-memory cache.
+ * Both the client and cache are lazily initialized on the first `resolve()` call
+ * and persist for the lifetime of the resolver.
+ *
+ * Returns an object compatible with plebbit-js's NameResolverSchema.
+ */
+export function createBsoResolver({ provider, dataPath }: CreateBsoResolverArgs) {
+  let client: PublicClient | null = null;
+  let cache: ResolverCache | null = null;
+
+  return {
+    key: "bso-resolver",
+    provider,
+    dataPath,
+    canResolve: ({ name }: CanResolveBsoArgs) => canResolveBso({ name }),
+    resolve: async ({ name, abortSignal }: { name: string; provider: string; abortSignal?: AbortSignal }) => {
+      // Lazy init singletons on first call
+      if (!client) {
+        const transport = provider === "viem" ? http() : http(provider);
+        client = createPublicClient({ chain: mainnet, transport });
+      }
+      if (!cache) {
+        // TODO: when dataPath is provided, use persistent storage (sqlite/files)
+        // TODO: when in browser (typeof indexedDB !== 'undefined'), use IndexedDB
+        // For now, always use in-memory cache
+        cache = createInMemoryCache();
+      }
+
+      // Check cache
+      const cached = cache.get(name);
+      if (cached && !isCacheStale(cached)) {
+        return cached.value;
+      }
+
+      // Resolve using singleton client
+      const result = await resolveWithClient({ client, name, abortSignal });
+
+      // Store in cache
+      if (result) {
+        cache.set(name, { value: result, timestampMs: Date.now() });
+      }
+
+      return result;
+    },
+  };
 }
