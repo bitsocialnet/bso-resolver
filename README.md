@@ -19,18 +19,19 @@ import Pkc from "@pkc/pkc-js";
 import { BsoResolver } from "@bitsocial/bso-resolver";
 
 const chainProviderUrls = [
-  "viem",
+  "viem", // uses viem's default public transport
   "https://mainnet.infura.io/v3/YOUR_KEY",
+  "wss://mainnet.infura.io/ws/v3/YOUR_KEY",
 ];
 
 const resolvers = chainProviderUrls.map((url) => new BsoResolver({
-  key: `bso-${url === "viem" ? "viem" : new URL(url).hostname}`,
+  key: `bso-${url}`,
   provider: url,
 }));
 
 const pkc = await Pkc({ nameResolvers: resolvers });
 
-// Access a resolver instance later:
+// Access a resolver instance later, it should not be needed in general:
 const resolver = pkc.clients.nameResolvers["bso-viem"].resolver;
 
 // Later, when shutting down:
