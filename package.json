@@ -39,6 +39,7 @@
     "release": "HUSKY=0 release-it --config config/.release-it.json"
   },
   "dependencies": {
+    "@plebbit/plebbit-logger": "github:plebbit/plebbit-logger#355a96d7659ed820047980049dfa627d30d83a69",
     "better-sqlite3": "12.6.2",
     "viem": "2.47.0"
   },
