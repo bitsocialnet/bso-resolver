@@ -14,6 +14,8 @@ npm
 ## Workflow
 
 After any change to `src/` or `package.json`, run `npm test` to make sure nothing is broken.
+Make sure to add tests to reproduce reported bugs before fixing them
+Make sure to add tests when you add new features
 
 ## Conventions
 

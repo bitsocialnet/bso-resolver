@@ -439,3 +439,105 @@ describe("BsoResolver shared resources", () => {
     await resolver.destroy();
   });
 });
+
+const UPDATED_PUBLIC_KEY = "12D3KooWGC4xFPBDmMENweb3rPBYDMPSMHpJBGZJGCPFp7TCZGTL";
+
+describe("BsoResolver stale-while-revalidate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetRegistries();
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(UPDATED_PUBLIC_KEY),
+    }));
+  });
+
+  afterEach(() => {
+    _resetRegistries();
+  });
+
+  it("returns stale cached value immediately and refreshes in background", async () => {
+    // First call populates cache (no cache yet, so it blocks)
+    (isCacheStale as Mock).mockReturnValue(true);
+
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "stale.eth" });
+
+    // Now mock returns updated key for background refresh
+    const mockGetEnsText = getMockGetEnsText();
+    mockGetEnsText.mockReset().mockResolvedValue(UPDATED_PUBLIC_KEY);
+
+    // Mark cache as stale — resolve should return stale value immediately
+    (isCacheStale as Mock).mockReturnValue(true);
+    const result = await resolver.resolve({ name: "stale.eth" });
+
+    // Should return the stale cached value immediately
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+
+    // Background refresh should have been triggered
+    expect(mockGetEnsText).toHaveBeenCalledTimes(1);
+
+    // Wait for background refresh to complete
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Now mark cache as fresh — should get updated value
+    (isCacheStale as Mock).mockReturnValue(false);
+    const freshResult = await resolver.resolve({ name: "stale.eth" });
+    expect(freshResult).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+
+    await resolver.destroy();
+  });
+
+  it("deduplicates concurrent resolves for the same name", async () => {
+    (isCacheStale as Mock).mockReturnValue(true);
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    // Two concurrent resolves for the same name with no cache
+    const [r1, r2] = await Promise.all([
+      resolver.resolve({ name: "dedup.eth" }),
+      resolver.resolve({ name: "dedup.eth" }),
+    ]);
+
+    expect(r1).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+    expect(r2).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+
+    // Should only have called ENS once due to deduplication
+    const mockGetEnsText = getMockGetEnsText();
+    expect(mockGetEnsText).toHaveBeenCalledTimes(1);
+
+    await resolver.destroy();
+  });
+
+  it("returns stale value when background refresh fails", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    // First call populates cache
+    (isCacheStale as Mock).mockReturnValue(true);
+    await resolver.resolve({ name: "fail.eth" });
+
+    // Now make ENS fail for background refresh
+    const mockGetEnsText = getMockGetEnsText();
+    mockGetEnsText.mockReset().mockRejectedValue(new Error("RPC timeout"));
+
+    // Mark stale — triggers background refresh that will fail
+    (isCacheStale as Mock).mockReturnValue(true);
+    const result = await resolver.resolve({ name: "fail.eth" });
+
+    // Should still return the stale cached value
+    expect(result).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+
+    // Wait for background refresh to settle
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Cache should still have the original stale value (not corrupted)
+    (isCacheStale as Mock).mockReturnValue(false);
+    const afterFailure = await resolver.resolve({ name: "fail.eth" });
+    expect(afterFailure).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+
+    await resolver.destroy();
+  });
+});

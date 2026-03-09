@@ -1,7 +1,10 @@
+import Logger from "@plebbit/plebbit-logger";
 import { createPublicClient, http, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import type { CacheEntry, ResolverCache } from "./cache.js";
+
+const log = Logger("bso-resolver:resolver");
 
 export interface CanResolveBsoArgs {
   name: string;
@@ -287,6 +290,7 @@ export abstract class BaseBsoResolver {
   private _cachePromise: Promise<ResolverCache> | null = null;
   private _initialized = false;
   private _destroyed = false;
+  private _pendingResolves = new Map<string, Promise<BsoResolveResult | undefined>>();
 
   protected constructor({ key, provider, dataPath }: BsoResolverArgs, runtime: ResolverRuntime) {
     this.key = key;
@@ -318,24 +322,50 @@ export abstract class BaseBsoResolver {
 
     const cache = await this._cachePromise!;
     const cached = await cache.get(name);
-    if (cached && !this.runtime.isCacheStale(cached)) {
+
+    if (cached) {
+      if (!this.runtime.isCacheStale(cached)) {
+        return cached.value as BsoResolveResult;
+      }
+      // stale — return immediately, refresh in background
+      this._resolveAndCache(cache, name).catch(() => {});
       return cached.value as BsoResolveResult;
     }
 
-    try {
-      const result = await resolveWithClient({ client: this._client!, name, abortSignal });
+    // no cache at all — must block and wait
+    return await this._resolveAndCache(cache, name, abortSignal);
+  }
 
-      if (result) {
-        await cache.set(name, { value: result, timestampMs: Date.now() });
-      }
+  private _resolveAndCache(
+    cache: ResolverCache,
+    name: string,
+    abortSignal?: AbortSignal,
+  ): Promise<BsoResolveResult | undefined> {
+    const existing = this._pendingResolves.get(name);
+    if (existing) return existing;
 
-      return result;
-    } catch (error) {
-      if (error instanceof Error && (error as any).details) {
-        (error as any).details.provider = this.provider;
-      }
-      throw error;
-    }
+    const promise = resolveWithClient({ client: this._client!, name, abortSignal })
+      .then(async (result) => {
+        if (result) {
+          await cache.set(name, { value: result, timestampMs: Date.now() });
+        }
+        return result;
+      })
+      .catch((error) => {
+        if (error instanceof Error && (error as any).details) {
+          (error as any).details.provider = this.provider;
+        }
+        log.error(
+          `Failed to resolve "${name}" with provider "${this.provider}": ${error instanceof Error ? error.message : error}`
+        );
+        throw error;
+      })
+      .finally(() => {
+        this._pendingResolves.delete(name);
+      });
+
+    this._pendingResolves.set(name, promise);
+    return promise;
   }
 
   async destroy(): Promise<void> {
