@@ -180,15 +180,14 @@ The package publishes separate Node and browser entry points.
 
 ## Publishing to npm
 
-This package is not yet published to npm. To set up automated publishing:
+Publishing is automated via `.github/workflows/publish.yml`. When `release-it` creates a GitHub release (triggered by CI on `main`), the publish workflow builds and publishes to npm with `--provenance`.
+
+### First-time setup
 
 1. Create the `@bitsocial` organization on [npmjs.com](https://www.npmjs.com)
 2. Do an initial manual publish: `npm login && npm run build && npm publish --access public`
 3. On npmjs.com, go to the package settings → Publishing access → Configure trusted publishing
 4. Add: owner=`bitsocialhq`, repo=`bso-resolver`, workflow=`publish.yml`
-5. Apply the stashed changes (`git stash pop`) which add the `.github/workflows/publish.yml` workflow and `publishConfig` to `package.json`
-
-After setup, releases created by `release-it` will automatically trigger npm publishing with provenance via OIDC trusted publishing.
 
 ## License
 
