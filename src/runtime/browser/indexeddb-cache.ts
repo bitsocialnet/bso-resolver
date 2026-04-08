@@ -29,8 +29,10 @@ export async function createIndexedDBCache(): Promise<ResolverCache> {
       const tx = db.transaction("cache", mode);
       const store = tx.objectStore("cache");
       const request = fn(store);
-      request.onsuccess = () => resolve(request.result);
+      let result: T;
+      request.onsuccess = () => { result = request.result; };
       request.onerror = () => reject(request.error);
+      tx.oncomplete = () => resolve(result);
       tx.onabort = () => reject(tx.error ?? new DOMException("Transaction aborted", "AbortError"));
     });
   }
