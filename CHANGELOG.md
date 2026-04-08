@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.0.3](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.2...v0.0.3) (2026-04-08)
+
 ## 0.0.2 (2026-04-08)
 
 ### Features
