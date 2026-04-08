@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: ["completed"]
+    branches: [master]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Set up Git author
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Get current version
+        id: before
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Run release-it
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release -- --ci || true
+
+      - name: Check if released
+        id: release
+        run: |
+          AFTER=$(node -p "require('./package.json').version")
+          if [ "${{ steps.before.outputs.version }}" != "$AFTER" ]; then
+            echo "Released v$AFTER"
+            echo "released=true" >> $GITHUB_OUTPUT
+          else
+            echo "No new version to release"
+            echo "released=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm
+        if: steps.release.outputs.released == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

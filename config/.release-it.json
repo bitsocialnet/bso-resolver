@@ -5,7 +5,8 @@
     "commit": false,
     "tagAnnotation": "v${version}",
     "tagName": "v${version}",
-    "tagArgs": ["--force"]
+    "push": true,
+    "pushArgs": ["--follow-tags"]
   },
   "npm": { "publish": false },
   "github": {
