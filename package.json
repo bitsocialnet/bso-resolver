@@ -27,6 +27,10 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bitsocialnet/bso-resolver.git"
+  },
   "publishConfig": {
     "access": "public"
   },
