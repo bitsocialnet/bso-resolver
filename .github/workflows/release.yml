@@ -22,7 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
       - run: npm ci
@@ -54,10 +53,6 @@ jobs:
             echo "released=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upgrade npm for trusted publishing
-        if: steps.release.outputs.released == 'true'
-        run: npm install -g npm@latest
-
       - name: Publish to npm
         if: steps.release.outputs.released == 'true'
-        run: npm publish --access public --provenance
+        run: npx --yes npm@latest publish --access public --provenance
