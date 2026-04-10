@@ -15,7 +15,7 @@ npm install @bitsocial/bso-resolver
 If you're wiring this into [`pkc-js`](https://github.com/pkc/pkc-js), create resolver instances per provider:
 
 ```ts
-import Pkc from "@pkc/pkc-js";
+import Pkc from "@pkcprotocol/pkc-js";
 import { BsoResolver } from "@bitsocial/bso-resolver";
 
 const chainProviderUrls = [
