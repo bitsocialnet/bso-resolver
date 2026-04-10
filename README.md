@@ -101,6 +101,8 @@ Returns a parsed object from the `bitsocial` TXT record, or `undefined` if not f
 
 TXT value format: `<ipnsPublicKey>[;key=value;other=value]` -> `{ publicKey, key, other }`
 
+> **Note:** Each `bitsocial` TXT record value points to a single identity — either a community or an author. A future revision of the format may allow both in the same record.
+
 #### `resolver.canResolve({ name }): boolean`
 
 Returns `true` if the name ends with `.bso` (case-insensitive).
