@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.3...v0.0.4) (2026-04-10)
+
+### Bug Fixes
+
+* **ci:** fix npm trusted publishing failures ([6c6d9db](https://github.com/bitsocialnet/bso-resolver/commit/6c6d9db3ad84593c2097a643e254a506129272d7))
+* trigger initial trusted publishing pipeline test ([ae62998](https://github.com/bitsocialnet/bso-resolver/commit/ae629980fb7cad70c724fd1f80f39e90c5f7d9e5))
+
 ## [0.0.3](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.2...v0.0.3) (2026-04-08)
 
 ## 0.0.2 (2026-04-08)
