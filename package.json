@@ -2,7 +2,7 @@
   "name": "@bitsocial/bso-resolver",
   "version": "0.0.4",
   "type": "module",
-  "license": "GPL-2.0-only",
+  "license": "GPL-3.0-or-later",
   "engines": {
     "node": ">=22"
   },
@@ -47,7 +47,7 @@
     "release": "HUSKY=0 release-it --config config/.release-it.json"
   },
   "dependencies": {
-    "@pkc/pkc-logger": "github:pkcprotocol/pkc-logger#cb494fbaf332ed5b2cfd9d9d0f90ca7fd0058b4a",
+    "@pkcprotocol/pkc-logger": "github:pkcprotocol/pkc-logger#cb494fbaf332ed5b2cfd9d9d0f90ca7fd0058b4a",
     "better-sqlite3": "12.6.2",
     "viem": "2.47.0"
   },
