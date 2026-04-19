@@ -19,20 +19,20 @@ import Pkc from "@pkcprotocol/pkc-js";
 import { BsoResolver } from "@bitsocial/bso-resolver";
 
 const chainProviderUrls = [
-  "viem", // uses viem's default public transport
+  "https://eth.drpc.org", // see "Recommended chain providers" below
   "https://mainnet.infura.io/v3/YOUR_KEY",
   "wss://mainnet.infura.io/ws/v3/YOUR_KEY",
 ];
 
 const resolvers = chainProviderUrls.map((url) => new BsoResolver({
-  key: `bso-${url}`,
+  key: `bso-${new URL(url).origin}`,
   provider: url,
 }));
 
 const pkc = await Pkc({ nameResolvers: resolvers });
 
 // Access a resolver instance later, it should not be needed in general:
-const resolver = pkc.clients.nameResolvers["bso-viem"].resolver;
+const resolver = pkc.clients.nameResolvers["bso-https://eth.drpc.org"].resolver;
 
 // Later, when shutting down:
 await pkc.destroy(); // should cascade to resolver.destroy() for each resolver
@@ -72,13 +72,24 @@ await resolver.destroy();
 await resolver2.destroy();
 ```
 
+## Recommended chain providers
+
+The following free public mainnet RPCs have been verified to resolve `.bso` names reliably (verified 2026-04-19):
+
+- `https://eth.drpc.org`
+- `https://ethereum.publicnode.com`
+- `https://ethereum-rpc.publicnode.com`
+- `https://rpc.mevblocker.io`
+- `https://1rpc.io/eth`
+- `https://eth-pokt.nodies.app`
+
 ## API
 
 ### `new BsoResolver({ key, provider, dataPath? })`
 
 Creates a resolver instance with a shared viem client and persistent cache. Both are lazily initialized on the first `resolve()` call.
 
-- **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).hostname}` ``)
+- **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).origin}` `` — `origin` keeps the scheme so `https://…` and `wss://…` to the same host don't collide)
 - **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL or a Websocket RPC URL
 - **`dataPath`** (optional, Node only) - Enables SQLite persistence for the cache. Browser builds do not support SQLite and will throw if `dataPath` is provided.
 
