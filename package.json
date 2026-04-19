@@ -47,7 +47,7 @@
     "release": "HUSKY=0 release-it --config config/.release-it.json"
   },
   "dependencies": {
-    "@pkcprotocol/pkc-logger": "github:pkcprotocol/pkc-logger#cb494fbaf332ed5b2cfd9d9d0f90ca7fd0058b4a",
+    "@pkcprotocol/pkc-logger": "0.1.0",
     "better-sqlite3": "12.6.2",
     "viem": "2.48.1"
   },
