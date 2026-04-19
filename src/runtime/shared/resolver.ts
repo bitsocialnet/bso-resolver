@@ -12,7 +12,23 @@ export interface CanResolveBsoArgs {
 
 export interface BsoResolveResult {
   publicKey: string;
-  [key: string]: string;
+  /**
+   * Unrecognized by pkc-js — informational / debugging only.
+   * The provider (RPC URL or "viem") that produced this result, whether
+   * fresh or cached. For cache hits this may differ from the RPC the
+   * current `BsoResolver` instance is configured with, since cached
+   * entries carry the provider of whichever instance first wrote them
+   * (caches may be shared across instances via `dataPath`).
+   */
+  _resolvedBy?: string;
+  /**
+   * Unrecognized by pkc-js — informational / debugging only.
+   * Stringified ms-since-epoch when the cached entry was originally
+   * written. Absent on fresh-from-RPC results; callers parse with
+   * `Number(result._cachedAtMs)`.
+   */
+  _cachedAtMs?: string;
+  [key: string]: string | undefined;
 }
 
 export interface BsoResolverArgs {
@@ -110,8 +126,10 @@ function parseBitsocialTxtRecord(record: string): BsoResolveResult {
       throw new Error("Invalid bitsocial TXT record: metadata key cannot be empty.");
     }
 
-    if (key === "publicKey") {
-      throw new Error('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
+    if (key === "publicKey" || key === "_resolvedBy" || key === "_cachedAtMs") {
+      throw new Error(
+        `Invalid bitsocial TXT record: "${key}" suffix key is not allowed.`
+      );
     }
 
     const value = segment.slice(separatorIndex + 1).trim();
@@ -313,11 +331,11 @@ export abstract class BaseBsoResolver {
 
     if (cached) {
       if (!this.runtime.isCacheStale(cached)) {
-        return cached.value as BsoResolveResult;
+        return this._cachedResult(cached);
       }
       // stale — return immediately, refresh in background (no user abort signal)
       this._resolveAndCache(cache, name).catch(() => {});
-      return cached.value as BsoResolveResult;
+      return this._cachedResult(cached);
     }
 
     // no cache at all — must block and wait
@@ -331,6 +349,14 @@ export abstract class BaseBsoResolver {
     return await withAbortSignal(sharedPromise, combinedSignal);
   }
 
+  private _cachedResult(cached: CacheEntry): BsoResolveResult {
+    return {
+      ...(cached.value as BsoResolveResult),
+      _resolvedBy: cached.provider,
+      _cachedAtMs: String(cached.timestampMs),
+    };
+  }
+
   private _resolveAndCache(
     cache: ResolverCache,
     name: string,
@@ -341,7 +367,12 @@ export abstract class BaseBsoResolver {
     const promise = resolveWithClient({ client: this._client!, name })
       .then(async (result) => {
         if (result) {
-          await cache.set(name, { value: result, timestampMs: Date.now() });
+          await cache.set(name, {
+            value: result as Record<string, string>,
+            timestampMs: Date.now(),
+            provider: this.provider,
+          });
+          return { ...result, _resolvedBy: this.provider };
         }
         return result;
       })

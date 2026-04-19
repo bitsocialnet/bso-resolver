@@ -1,8 +1,9 @@
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import type { CacheEntry } from "../../src/runtime/shared/cache.js";
 import {
   createSqliteCache,
@@ -13,6 +14,7 @@ import { createIndexedDBCache } from "../../src/runtime/browser/cache.js";
 const SAMPLE_ENTRY: CacheEntry = {
   value: { publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR" },
   timestampMs: Date.now(),
+  provider: "https://rpc.example.com",
 };
 
 const SAMPLE_ENTRY_WITH_METADATA: CacheEntry = {
@@ -22,6 +24,7 @@ const SAMPLE_ENTRY_WITH_METADATA: CacheEntry = {
     network: "mainnet",
   },
   timestampMs: Date.now(),
+  provider: "viem",
 };
 
 // --- SQLite cache ---
@@ -83,6 +86,39 @@ describe("createSqliteCache", () => {
     await createSqliteCache(tmpDir);
     expect(existsSync(join(tmpDir, ".bso-resolver", "bso-cache.sqlite"))).toBe(true);
   });
+
+  it("drops the legacy table when opening a cache with an older schema version", async () => {
+    // Simulate a pre-v2 database that lacks the `provider` column.
+    const dir = join(tmpDir, ".bso-resolver");
+    mkdirSync(dir, { recursive: true });
+    const dbPath = join(dir, "bso-cache.sqlite");
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE bso_cache (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        timestamp_ms INTEGER NOT NULL
+      )
+    `);
+    legacy.prepare("INSERT INTO bso_cache (key, value, timestamp_ms) VALUES (?, ?, ?)").run(
+      "legacy.bso",
+      JSON.stringify({ publicKey: "legacy" }),
+      Date.now()
+    );
+    // user_version is 0 by default — different from CACHE_SCHEMA_VERSION = 2
+    legacy.close();
+
+    const cache = await createSqliteCache(tmpDir);
+
+    // Legacy row should be gone after the drop-and-recreate.
+    expect(await cache.get("legacy.bso")).toBeUndefined();
+
+    // New entries with provider column round-trip correctly.
+    await cache.set("fresh.bso", SAMPLE_ENTRY);
+    expect(await cache.get("fresh.bso")).toEqual(SAMPLE_ENTRY);
+
+    await cache.destroy();
+  });
 });
 
 // --- IndexedDB cache ---
@@ -122,6 +158,42 @@ describe("createIndexedDBCache", () => {
     await cache.set("example.bso", SAMPLE_ENTRY);
     await cache.destroy();
     await expect(cache.get("example.bso")).rejects.toThrow();
+  });
+
+  it("wipes existing records when upgrading from version 1", async () => {
+    // Manually open the DB at the pre-v2 version and seed a legacy record.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open("bso-resolver-cache", 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore("cache", { keyPath: "key" });
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction("cache", "readwrite");
+        tx.objectStore("cache").put({
+          key: "legacy.bso",
+          value: { publicKey: "legacy" },
+          timestampMs: Date.now(),
+          // No `provider` field — pre-v2 shape
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+
+    // Reopen via createIndexedDBCache — should bump to v2 and wipe the store.
+    const cache = await createIndexedDBCache();
+    expect(await cache.get("legacy.bso")).toBeUndefined();
+
+    // New entries round-trip with provider.
+    await cache.set("fresh.bso", SAMPLE_ENTRY);
+    expect(await cache.get("fresh.bso")).toEqual(SAMPLE_ENTRY);
+
+    await cache.destroy();
   });
 });
 

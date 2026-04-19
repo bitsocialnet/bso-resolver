@@ -9,6 +9,7 @@ import {
 const SAMPLE_ENTRY: CacheEntry = {
   value: { publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR" },
   timestampMs: Date.now(),
+  provider: "https://rpc.example.com",
 };
 
 const SAMPLE_ENTRY_WITH_METADATA: CacheEntry = {
@@ -18,13 +19,18 @@ const SAMPLE_ENTRY_WITH_METADATA: CacheEntry = {
     network: "mainnet",
   },
   timestampMs: Date.now(),
+  provider: "viem",
 };
 
 // --- isCacheStale ---
 
 describe("isCacheStale", () => {
   it("returns false for a fresh entry", () => {
-    const entry: CacheEntry = { value: { publicKey: "key" }, timestampMs: Date.now() };
+    const entry: CacheEntry = {
+      value: { publicKey: "key" },
+      timestampMs: Date.now(),
+      provider: "viem",
+    };
     expect(isCacheStale(entry)).toBe(false);
   });
 
@@ -32,12 +38,17 @@ describe("isCacheStale", () => {
     const entry: CacheEntry = {
       value: { publicKey: "key" },
       timestampMs: Date.now() - DEFAULT_CACHE_TTL_MS - 1,
+      provider: "viem",
     };
     expect(isCacheStale(entry)).toBe(true);
   });
 
   it("accepts a custom TTL", () => {
-    const entry: CacheEntry = { value: { publicKey: "key" }, timestampMs: Date.now() - 500 };
+    const entry: CacheEntry = {
+      value: { publicKey: "key" },
+      timestampMs: Date.now() - 500,
+      provider: "viem",
+    };
     expect(isCacheStale(entry, 1000)).toBe(false);
     expect(isCacheStale(entry, 100)).toBe(true);
   });

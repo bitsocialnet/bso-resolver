@@ -1,4 +1,5 @@
 import {
+  CACHE_SCHEMA_VERSION,
   DEFAULT_CACHE_TTL_MS,
   createInMemoryCache,
   createRuntimeCache,
@@ -13,6 +14,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 
 export {
+  CACHE_SCHEMA_VERSION,
   DEFAULT_CACHE_TTL_MS,
   createIndexedDBCache,
   createInMemoryCache,
@@ -31,32 +33,44 @@ export function createSqliteCache(dataPath: string): Promise<ResolverCache> {
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
 
+  const currentVersion = (db.pragma("user_version", { simple: true }) as number) ?? 0;
+  if (currentVersion !== CACHE_SCHEMA_VERSION) {
+    db.exec("DROP TABLE IF EXISTS bso_cache");
+    db.pragma(`user_version = ${CACHE_SCHEMA_VERSION}`);
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS bso_cache (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
-      timestamp_ms INTEGER NOT NULL
+      timestamp_ms INTEGER NOT NULL,
+      provider TEXT NOT NULL
     )
   `);
 
-  const getStmt = db.prepare("SELECT value, timestamp_ms FROM bso_cache WHERE key = ?");
+  const getStmt = db.prepare(
+    "SELECT value, timestamp_ms, provider FROM bso_cache WHERE key = ?"
+  );
   const setStmt = db.prepare(
-    "INSERT OR REPLACE INTO bso_cache (key, value, timestamp_ms) VALUES (?, ?, ?)"
+    "INSERT OR REPLACE INTO bso_cache (key, value, timestamp_ms, provider) VALUES (?, ?, ?, ?)"
   );
   const deleteStmt = db.prepare("DELETE FROM bso_cache WHERE key = ?");
 
   return Promise.resolve({
     async get(key: string): Promise<CacheEntry | undefined> {
-      const row = getStmt.get(key) as { value: string; timestamp_ms: number } | undefined;
+      const row = getStmt.get(key) as
+        | { value: string; timestamp_ms: number; provider: string }
+        | undefined;
       if (!row) return undefined;
       return {
         value: JSON.parse(row.value) as Record<string, string>,
         timestampMs: row.timestamp_ms,
+        provider: row.provider,
       };
     },
 
     async set(key: string, entry: CacheEntry): Promise<void> {
-      setStmt.run(key, JSON.stringify(entry.value), entry.timestampMs);
+      setStmt.run(key, JSON.stringify(entry.value), entry.timestampMs, entry.provider);
     },
 
     async delete(key: string): Promise<void> {

@@ -1,6 +1,9 @@
+export const CACHE_SCHEMA_VERSION = 2;
+
 export interface CacheEntry {
   value: Record<string, string>;
   timestampMs: number;
+  provider: string;
 }
 
 export interface ResolverCache {

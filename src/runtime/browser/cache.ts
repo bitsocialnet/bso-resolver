@@ -1,4 +1,5 @@
 import {
+  CACHE_SCHEMA_VERSION,
   DEFAULT_CACHE_TTL_MS,
   createInMemoryCache,
   createRuntimeCache,
@@ -10,6 +11,7 @@ import {
 import { createIndexedDBCache } from "./indexeddb-cache.js";
 
 export {
+  CACHE_SCHEMA_VERSION,
   DEFAULT_CACHE_TTL_MS,
   createIndexedDBCache,
   createInMemoryCache,

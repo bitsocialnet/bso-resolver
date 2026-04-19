@@ -1,14 +1,15 @@
-import type { CacheEntry, ResolverCache } from "../shared/cache.js";
+import { CACHE_SCHEMA_VERSION, type CacheEntry, type ResolverCache } from "../shared/cache.js";
 
 function openIndexedDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("bso-resolver-cache", 1);
+    const request = indexedDB.open("bso-resolver-cache", CACHE_SCHEMA_VERSION);
 
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains("cache")) {
-        db.createObjectStore("cache", { keyPath: "key" });
+      if (db.objectStoreNames.contains("cache")) {
+        db.deleteObjectStore("cache");
       }
+      db.createObjectStore("cache", { keyPath: "key" });
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -44,12 +45,18 @@ export async function createIndexedDBCache(): Promise<ResolverCache> {
       return {
         value: row.value as Record<string, string>,
         timestampMs: row.timestampMs as number,
+        provider: row.provider as string,
       };
     },
 
     async set(key: string, entry: CacheEntry): Promise<void> {
       await withTransaction("readwrite", (store) =>
-        store.put({ key, value: entry.value, timestampMs: entry.timestampMs })
+        store.put({
+          key,
+          value: entry.value,
+          timestampMs: entry.timestampMs,
+          provider: entry.provider,
+        })
       );
     },
 

@@ -62,7 +62,8 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example.bso" });
 
-    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY, _resolvedBy: "viem" });
+    expect(result?._cachedAtMs).toBeUndefined();
     expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
@@ -80,7 +81,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example.bso" });
 
-    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY, _resolvedBy: "viem" });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -151,7 +152,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example" });
 
-    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY, _resolvedBy: "viem" });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -177,6 +178,7 @@ describe("BsoResolver", () => {
       name: "memes.bso",
       network: "mainnet",
       owner: "bitsocial",
+      _resolvedBy: "viem",
     });
 
     await resolver.destroy();
@@ -195,6 +197,7 @@ describe("BsoResolver", () => {
     expect(result).toEqual({
       publicKey: VALID_PUBLIC_KEY,
       network: "testnet",
+      _resolvedBy: "viem",
     });
 
     await resolver.destroy();
@@ -226,6 +229,38 @@ describe("BsoResolver", () => {
     await expect(
       resolver.resolve({ name: "example.bso" })
     ).rejects.toThrow('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
+
+    await resolver.destroy();
+  });
+
+  it('throws when metadata includes "_resolvedBy" key', async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockResolvedValue(`${VALID_PUBLIC_KEY};_resolvedBy=attacker.rpc`),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow('Invalid bitsocial TXT record: "_resolvedBy" suffix key is not allowed.');
+
+    await resolver.destroy();
+  });
+
+  it('throws when metadata includes "_cachedAtMs" key', async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockResolvedValue(`${VALID_PUBLIC_KEY};_cachedAtMs=0`),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow('Invalid bitsocial TXT record: "_cachedAtMs" suffix key is not allowed.');
 
     await resolver.destroy();
   });
@@ -384,7 +419,7 @@ describe("BsoResolver abort and destroy", () => {
     // Resolve the underlying request — second caller should get the result
     resolveEns(VALID_PUBLIC_KEY);
     const result = await p2;
-    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY, _resolvedBy: "viem" });
 
     await resolver.destroy();
   });
@@ -560,6 +595,69 @@ describe("BsoResolver lifecycle", () => {
 
     await resolver.destroy();
   });
+
+  it("fresh result carries _resolvedBy but no _cachedAtMs", async () => {
+    const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
+
+    const fresh = await resolver.resolve({ name: "fresh.bso" });
+
+    expect(fresh?._resolvedBy).toBe("https://rpc.example.com");
+    expect(fresh?._cachedAtMs).toBeUndefined();
+
+    await resolver.destroy();
+  });
+
+  it("cache hit attaches _resolvedBy from the caching provider and _cachedAtMs", async () => {
+    const writeTime = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(writeTime);
+
+    try {
+      const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
+
+      // First call populates cache at `writeTime`
+      await resolver.resolve({ name: "cached.bso" });
+
+      // Second call — should hit cache
+      const cachedResult = await resolver.resolve({ name: "cached.bso" });
+
+      expect(cachedResult?._resolvedBy).toBe("https://rpc.example.com");
+      expect(cachedResult?._cachedAtMs).toBe(String(writeTime));
+
+      await resolver.destroy();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("cache hit on a different resolver surfaces the original provider", async () => {
+    const writeTime = 1_700_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(writeTime);
+
+    try {
+      // First resolver writes to cache
+      const writer = new BsoResolver({ key: "writer", provider: "https://first.rpc" });
+      await writer.resolve({ name: "shared.bso" });
+
+      // Second resolver shares the cache (same runtime -> same IDB/in-memory store
+      // keyed by `cacheRegistryKey`). Its provider is different.
+      const reader = new BsoResolver({ key: "reader", provider: "https://second.rpc" });
+      const mockGetEnsText = getMockGetEnsText();
+      mockGetEnsText.mockClear();
+
+      const cached = await reader.resolve({ name: "shared.bso" });
+
+      // Reader should have gotten it from cache without hitting ENS
+      expect(mockGetEnsText).not.toHaveBeenCalled();
+      // _resolvedBy should be the *writer's* provider, not the reader's
+      expect(cached?._resolvedBy).toBe("https://first.rpc");
+      expect(cached?._cachedAtMs).toBe(String(writeTime));
+
+      await writer.destroy();
+      await reader.destroy();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
 });
 
 const UPDATED_PUBLIC_KEY = "12D3KooWGC4xFPBDmMENweb3rPBYDMPSMHpJBGZJGCPFp7TCZGTL";
@@ -600,11 +698,17 @@ describe("BsoResolver stale-while-revalidate", () => {
     mockGetEnsText.mockReset().mockResolvedValue(UPDATED_PUBLIC_KEY);
 
     // Advance past TTL — cache entry is now stale
-    vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
+    const refreshTime = baseTime + DEFAULT_CACHE_TTL_MS + 1;
+    vi.mocked(Date.now).mockReturnValue(refreshTime);
     const result = await resolver.resolve({ name: "stale.bso" });
 
-    // Should return the stale cached value immediately
-    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    // Should return the stale cached value immediately, with provenance pointing
+    // at the originally-caching provider and the original write time.
+    expect(result).toEqual({
+      publicKey: VALID_PUBLIC_KEY,
+      _resolvedBy: "viem",
+      _cachedAtMs: String(baseTime),
+    });
 
     // Background refresh should have been triggered
     expect(mockGetEnsText).toHaveBeenCalledTimes(1);
@@ -613,9 +717,13 @@ describe("BsoResolver stale-while-revalidate", () => {
     await new Promise((r) => queueMicrotask(r));
     await new Promise((r) => queueMicrotask(r));
 
-    // Now should get updated value (cache was refreshed in background)
+    // Now should get updated value with the refreshed timestamp
     const freshResult = await resolver.resolve({ name: "stale.bso" });
-    expect(freshResult).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+    expect(freshResult).toEqual({
+      publicKey: UPDATED_PUBLIC_KEY,
+      _resolvedBy: "viem",
+      _cachedAtMs: String(refreshTime),
+    });
 
     await resolver.destroy();
   });
@@ -629,8 +737,9 @@ describe("BsoResolver stale-while-revalidate", () => {
       resolver.resolve({ name: "dedup.bso" }),
     ]);
 
-    expect(r1).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
-    expect(r2).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+    // Fresh resolves carry _resolvedBy but no _cachedAtMs
+    expect(r1).toEqual({ publicKey: UPDATED_PUBLIC_KEY, _resolvedBy: "viem" });
+    expect(r2).toEqual({ publicKey: UPDATED_PUBLIC_KEY, _resolvedBy: "viem" });
 
     // Should only have called ENS once due to deduplication
     const mockGetEnsText = getMockGetEnsText();
@@ -653,8 +762,12 @@ describe("BsoResolver stale-while-revalidate", () => {
     vi.mocked(Date.now).mockReturnValue(baseTime + DEFAULT_CACHE_TTL_MS + 1);
     const result = await resolver.resolve({ name: "fail.bso" });
 
-    // Should still return the stale cached value
-    expect(result).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+    // Should still return the stale cached value with original provenance
+    expect(result).toEqual({
+      publicKey: UPDATED_PUBLIC_KEY,
+      _resolvedBy: "viem",
+      _cachedAtMs: String(baseTime),
+    });
 
     // Wait for background refresh to settle
     await new Promise((r) => queueMicrotask(r));
@@ -662,7 +775,11 @@ describe("BsoResolver stale-while-revalidate", () => {
 
     // Cache should still have the original value (not corrupted by failed refresh)
     const afterFailure = await resolver.resolve({ name: "fail.bso" });
-    expect(afterFailure).toEqual({ publicKey: UPDATED_PUBLIC_KEY });
+    expect(afterFailure).toEqual({
+      publicKey: UPDATED_PUBLIC_KEY,
+      _resolvedBy: "viem",
+      _cachedAtMs: String(baseTime),
+    });
 
     await resolver.destroy();
   });
