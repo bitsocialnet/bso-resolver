@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.6](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.5...v0.0.6) (2026-04-19)
+
+### Features
+
+* record provider provenance on cached resolves ([18c7f88](https://github.com/bitsocialnet/bso-resolver/commit/18c7f88a3c22006b33e872bddc02affceaa34118))
+
 ## [0.0.5](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.4...v0.0.5) (2026-04-19)
 
 ## [0.0.4](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.3...v0.0.4) (2026-04-10)
