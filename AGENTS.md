@@ -28,3 +28,4 @@ Make sure to add tests when you add new features
 - **Add tests** for all new features and bug fixes
 - **Exact dependency versions** - No `^` or `~` prefixes in package.json
 - **One resolver per provider URL** - Do not create multiple BsoResolver instances with the same provider URL. Each resolver owns its transport connection and closes it on destroy().
+- **`BsoResolveResult` docs** - `src/runtime/shared/resolver.ts` (`BsoResolveResult` interface) is the source of truth for the return type of `resolver.resolve()`. Keep README's "Return type: BsoResolveResult" subsection in sync when the interface changes.

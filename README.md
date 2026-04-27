@@ -52,7 +52,7 @@ resolver.canResolve({ name: "example.com" }); // false
 
 // Resolve a name
 const record = await resolver.resolve({ name: "example.bso" });
-// { publicKey: "12D3KooW...", ...otherPotentialFieldsInTheFuture }
+// BsoResolveResult | undefined
 
 // Resolve using a custom RPC URL
 const resolver2 = new BsoResolver({
@@ -101,16 +101,44 @@ const resolver = new BsoResolver({
 });
 ```
 
-#### `resolver.resolve({ name, abortSignal? }): Promise<{ publicKey: string, ...otherFields } | undefined>`
+#### `resolver.resolve({ name, abortSignal? }): Promise<BsoResolveResult | undefined>`
 
 Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
-Returns a parsed object from the `bitsocial` TXT record, or `undefined` if not found.
+Returns a [`BsoResolveResult`](#return-type-bsoresolveresult), or `undefined` if not found.
+
+`undefined` specifically means the lookup completed successfully but no `bitsocial` TXT record exists for `name` — either the name itself does not exist, or it exists but has no `bitsocial` text record set. Network/RPC failures and malformed TXT records throw rather than return `undefined`, so callers that need to distinguish "not found" from "lookup failed" should both `try/catch` and check for `result === undefined`.
 
 TXT value format: `<ipnsPublicKey>[;key=value;other=value]` -> `{ publicKey, key, other }`
+
+##### Return type: `BsoResolveResult`
+
+```ts
+interface BsoResolveResult {
+  /** Required. The IPNS public key from the first segment of the
+   *  `bitsocial` TXT record. */
+  publicKey: string;
+  /** (internal) Always present on a successful resolve. Either "viem"
+   *  or the HTTP/HTTPS/WebSocket RPC URL of the provider that produced
+   *  this result. On a cache hit, this reflects the provider of
+   *  whichever BsoResolver instance originally wrote the cache entry,
+   *  which can differ from the current instance's provider when caches
+   *  are shared via dataPath. */
+  _resolvedBy?: string;
+  /** (internal) Present only on cache hits. Stringified ms-since-epoch
+   *  when the cache entry was written. Absent on fresh-from-RPC results.
+   *  Parse with Number(result._cachedAtMs). */
+  _cachedAtMs?: string;
+  /** Custom metadata from key=value segments in the TXT record.
+   *  Reserved keys: publicKey, _resolvedBy, _cachedAtMs. */
+  [key: string]: string | undefined;
+}
+```
+
+> **Internal API — do not use in production.** Any field prefixed with `_` (currently `_resolvedBy` and `_cachedAtMs`, and any added later) is considered internal and unstable. These fields are not part of the public contract, are not consumed by `pkc-js`, and may change or be removed at any time without a major version bump. Use them only for debugging or local logging — never rely on them in production code.
 
 > **Note:** Each `bitsocial` TXT record value points to a single identity — either a community or an author. A future revision of the format may allow both in the same record.
 
