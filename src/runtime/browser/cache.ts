@@ -27,7 +27,7 @@ export async function createSqliteCache(): Promise<ResolverCache> {
 
 export async function createCache({ dataPath }: CreateCacheArgs = {}): Promise<ResolverCache> {
   return createRuntimeCache({
-    dataPath,
+    ...(dataPath !== undefined && { dataPath }),
     createIndexedDBCache,
     unsupportedDataPathError: "SQLite cache is not available in browser builds.",
   });

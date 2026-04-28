@@ -85,7 +85,7 @@ export function createSqliteCache(dataPath: string): Promise<ResolverCache> {
 
 export async function createCache({ dataPath }: CreateCacheArgs = {}): Promise<ResolverCache> {
   return createRuntimeCache({
-    dataPath,
+    ...(dataPath !== undefined && { dataPath }),
     createIndexedDBCache,
     createPersistentCache: createSqliteCache,
   });

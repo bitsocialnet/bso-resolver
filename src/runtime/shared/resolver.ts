@@ -1,4 +1,5 @@
 import Logger from "@pkcprotocol/pkc-logger";
+import type { NameResolverInterface } from "@pkcprotocol/pkc-js";
 import { createPublicClient, http, webSocket, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
@@ -19,16 +20,17 @@ export interface BsoResolveResult {
    * current `BsoResolver` instance is configured with, since cached
    * entries carry the provider of whichever instance first wrote them
    * (caches may be shared across instances via `dataPath`).
+   * Omitted from the result (rather than set to `undefined`) when not applicable.
    */
   _resolvedBy?: string;
   /**
    * Unrecognized by pkc-js — informational / debugging only.
    * Stringified ms-since-epoch when the cached entry was originally
-   * written. Absent on fresh-from-RPC results; callers parse with
-   * `Number(result._cachedAtMs)`.
+   * written. Omitted (rather than set to `undefined`) on fresh-from-RPC
+   * results; callers parse with `Number(result._cachedAtMs)`.
    */
   _cachedAtMs?: string;
-  [key: string]: string | undefined;
+  [key: string]: string;
 }
 
 export interface BsoResolverArgs {
@@ -243,7 +245,7 @@ class ResolverRuntimeImpl implements ResolverRuntime {
       existing.refCount++;
       return existing.cachePromise;
     }
-    const cachePromise = this._createCache({ dataPath });
+    const cachePromise = this._createCache(dataPath !== undefined ? { dataPath } : {});
     this.cacheRegistry.set(key, { cachePromise, refCount: 1 });
     return cachePromise;
   }
@@ -279,10 +281,10 @@ export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
   return isBsoAliasDomain(name);
 }
 
-export abstract class BaseBsoResolver {
+export abstract class BaseBsoResolver implements NameResolverInterface {
   readonly key: string;
   readonly provider: string;
-  readonly dataPath: string | undefined;
+  readonly dataPath?: string;
 
   private readonly runtime: ResolverRuntime;
   private readonly _destroyController = new AbortController();
@@ -295,7 +297,9 @@ export abstract class BaseBsoResolver {
   protected constructor({ key, provider, dataPath }: BsoResolverArgs, runtime: ResolverRuntime) {
     this.key = key;
     this.provider = provider;
-    this.dataPath = dataPath;
+    if (dataPath !== undefined) {
+      this.dataPath = dataPath;
+    }
     this.runtime = runtime;
   }
 
