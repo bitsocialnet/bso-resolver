@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.7](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.6...v0.0.7) (2026-05-02)
+
+### Features
+
+* implement pkc-js NameResolverInterface ([0c0db69](https://github.com/bitsocialnet/bso-resolver/commit/0c0db6973d39565cb5dc1afedb8caf8d372d5938))
+
+### Bug Fixes
+
+* **ci:** regenerate lock file with missing utf-8-validate v5 ([cfdffbf](https://github.com/bitsocialnet/bso-resolver/commit/cfdffbfadbc7ea051a6ddcf58cb94085b9f4124b))
+
 ## [0.0.6](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.5...v0.0.6) (2026-04-19)
 
 ### Features
