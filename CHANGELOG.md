@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.8](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.7...v0.0.8) (2026-05-05)
+
+### Bug Fixes
+
+* **ci:** regenerate lock file with missing utf-8-validate v5 ([d2b120c](https://github.com/bitsocialnet/bso-resolver/commit/d2b120c3a3f7b9b33f9357d7833f0db9aa19d5a6))
+
 ## [0.0.7](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.6...v0.0.7) (2026-05-02)
 
 ### Features
