@@ -48,7 +48,6 @@
   },
   "dependencies": {
     "@pkcprotocol/pkc-logger": "0.1.0",
-    "better-sqlite3": "12.6.2",
     "viem": "2.48.1"
   },
   "devDependencies": {
@@ -56,11 +55,9 @@
     "@commitlint/config-conventional": "20.4.3",
     "@pkcprotocol/pkc-js": "0.0.22",
     "@release-it/conventional-changelog": "10.0.5",
-    "@types/better-sqlite3": "7.6.13",
     "@vitest/browser-playwright": "4.0.18",
     "commitizen": "4.3.1",
     "cz-conventional-changelog": "3.3.0",
-    "fake-indexeddb": "6.2.5",
     "husky": "9.1.7",
     "playwright": "1.58.2",
     "release-it": "19.2.4",

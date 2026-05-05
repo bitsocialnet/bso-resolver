@@ -3,7 +3,6 @@ import type { NameResolverInterface } from "@pkcprotocol/pkc-js";
 import { createPublicClient, http, webSocket, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
-import type { CacheEntry, ResolverCache } from "./cache.js";
 
 const log = Logger("bitsocial:bso-resolver");
 
@@ -13,43 +12,16 @@ export interface CanResolveBsoArgs {
 
 export interface BsoResolveResult {
   publicKey: string;
-  /**
-   * Unrecognized by pkc-js — informational / debugging only.
-   * The provider (RPC URL or "viem") that produced this result, whether
-   * fresh or cached. For cache hits this may differ from the RPC the
-   * current `BsoResolver` instance is configured with, since cached
-   * entries carry the provider of whichever instance first wrote them
-   * (caches may be shared across instances via `dataPath`).
-   * Omitted from the result (rather than set to `undefined`) when not applicable.
-   */
-  _resolvedBy?: string;
-  /**
-   * Unrecognized by pkc-js — informational / debugging only.
-   * Stringified ms-since-epoch when the cached entry was originally
-   * written. Omitted (rather than set to `undefined`) on fresh-from-RPC
-   * results; callers parse with `Number(result._cachedAtMs)`.
-   */
-  _cachedAtMs?: string;
   [key: string]: string;
 }
 
 export interface BsoResolverArgs {
   key: string;
   provider: string;
-  dataPath?: string;
-}
-
-export interface ResolverBindings {
-  createCache(args?: { dataPath?: string }): Promise<ResolverCache>;
-  isCacheStale(entry: CacheEntry, ttlMs?: number): boolean;
 }
 
 export interface ResolverRuntime {
   createClient(provider: string, destroySignal: AbortSignal): PublicClient;
-  acquireCache(dataPath?: string): Promise<ResolverCache>;
-  releaseCache(dataPath?: string): Promise<void>;
-  isCacheStale(entry: CacheEntry, ttlMs?: number): boolean;
-  resetRegistries(): void;
 }
 
 export function isBsoAliasDomain(address: string): boolean {
@@ -128,10 +100,8 @@ function parseBitsocialTxtRecord(record: string): BsoResolveResult {
       throw new Error("Invalid bitsocial TXT record: metadata key cannot be empty.");
     }
 
-    if (key === "publicKey" || key === "_resolvedBy" || key === "_cachedAtMs") {
-      throw new Error(
-        `Invalid bitsocial TXT record: "${key}" suffix key is not allowed.`
-      );
+    if (key === "publicKey") {
+      throw new Error(`Invalid bitsocial TXT record: "${key}" suffix key is not allowed.`);
     }
 
     const value = segment.slice(separatorIndex + 1).trim();
@@ -210,21 +180,7 @@ async function resolveWithClient({
   }
 }
 
-interface CacheRegistryEntry {
-  cachePromise: Promise<ResolverCache>;
-  refCount: number;
-}
-
 class ResolverRuntimeImpl implements ResolverRuntime {
-  private readonly _createCache: ResolverBindings["createCache"];
-  readonly isCacheStale: ResolverBindings["isCacheStale"];
-  private readonly cacheRegistry = new Map<string, CacheRegistryEntry>();
-
-  constructor({ createCache, isCacheStale }: ResolverBindings) {
-    this._createCache = createCache;
-    this.isCacheStale = isCacheStale;
-  }
-
   createClient(provider: string, destroySignal: AbortSignal): PublicClient {
     const url = provider === "viem" ? undefined : provider;
     let transport;
@@ -237,44 +193,10 @@ class ResolverRuntimeImpl implements ResolverRuntime {
 
     return createPublicClient({ chain: mainnet, transport });
   }
-
-  acquireCache(dataPath?: string): Promise<ResolverCache> {
-    const key = this.cacheRegistryKey(dataPath);
-    const existing = this.cacheRegistry.get(key);
-    if (existing) {
-      existing.refCount++;
-      return existing.cachePromise;
-    }
-    const cachePromise = this._createCache(dataPath !== undefined ? { dataPath } : {});
-    this.cacheRegistry.set(key, { cachePromise, refCount: 1 });
-    return cachePromise;
-  }
-
-  async releaseCache(dataPath?: string): Promise<void> {
-    const key = this.cacheRegistryKey(dataPath);
-    const entry = this.cacheRegistry.get(key);
-    if (!entry) return;
-    entry.refCount--;
-    if (entry.refCount <= 0) {
-      this.cacheRegistry.delete(key);
-      const cache = await entry.cachePromise;
-      await cache.destroy();
-    }
-  }
-
-  resetRegistries(): void {
-    this.cacheRegistry.clear();
-  }
-
-  private cacheRegistryKey(dataPath?: string): string {
-    if (dataPath) return `sqlite:${dataPath}`;
-    if (typeof indexedDB !== "undefined") return "indexeddb";
-    return "memory";
-  }
 }
 
-export function createResolverRuntime(bindings: ResolverBindings): ResolverRuntime {
-  return new ResolverRuntimeImpl(bindings);
+export function createResolverRuntime(): ResolverRuntime {
+  return new ResolverRuntimeImpl();
 }
 
 export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
@@ -284,22 +206,16 @@ export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
 export abstract class BaseBsoResolver implements NameResolverInterface {
   readonly key: string;
   readonly provider: string;
-  readonly dataPath?: string;
 
   private readonly runtime: ResolverRuntime;
   private readonly _destroyController = new AbortController();
   private _client: PublicClient | null = null;
-  private _cachePromise: Promise<ResolverCache> | null = null;
   private _initialized = false;
   private _destroyed = false;
-  private _pendingResolves = new Map<string, Promise<BsoResolveResult | undefined>>();
 
-  protected constructor({ key, provider, dataPath }: BsoResolverArgs, runtime: ResolverRuntime) {
+  protected constructor({ key, provider }: BsoResolverArgs, runtime: ResolverRuntime) {
     this.key = key;
     this.provider = provider;
-    if (dataPath !== undefined) {
-      this.dataPath = dataPath;
-    }
     this.runtime = runtime;
   }
 
@@ -320,81 +236,27 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
 
     if (!this._initialized) {
       this._client = this.runtime.createClient(this.provider, this._destroyController.signal);
-      this._cachePromise = this.runtime.acquireCache(this.dataPath);
       this._initialized = true;
     }
 
-    const cache = await this._cachePromise!;
-
-    // Re-check after await — destroy() may have been called while waiting for the cache
-    if (this._destroyed) {
-      throw createAbortError();
-    }
-
-    const cached = await cache.get(name);
-
-    if (cached) {
-      if (!this.runtime.isCacheStale(cached)) {
-        return this._cachedResult(cached);
-      }
-      // stale — return immediately, refresh in background (no user abort signal)
-      this._resolveAndCache(cache, name).catch(() => {});
-      return this._cachedResult(cached);
-    }
-
-    // no cache at all — must block and wait
-    const sharedPromise = this._resolveAndCache(cache, name);
-
-    // Wrap with combined signal so this caller can be aborted independently
     const combinedSignal = abortSignal
       ? AbortSignal.any([this._destroyController.signal, abortSignal])
       : this._destroyController.signal;
 
-    return await withAbortSignal(sharedPromise, combinedSignal);
-  }
-
-  private _cachedResult(cached: CacheEntry): BsoResolveResult {
-    return {
-      ...(cached.value as BsoResolveResult),
-      _resolvedBy: cached.provider,
-      _cachedAtMs: String(cached.timestampMs),
-    };
-  }
-
-  private _resolveAndCache(
-    cache: ResolverCache,
-    name: string,
-  ): Promise<BsoResolveResult | undefined> {
-    const existing = this._pendingResolves.get(name);
-    if (existing) return existing;
-
-    const promise = resolveWithClient({ client: this._client!, name })
-      .then(async (result) => {
-        if (result) {
-          await cache.set(name, {
-            value: result as Record<string, string>,
-            timestampMs: Date.now(),
-            provider: this.provider,
-          });
-          return { ...result, _resolvedBy: this.provider };
-        }
-        return result;
-      })
-      .catch((error) => {
-        if (error instanceof Error && (error as any).details) {
-          (error as any).details.provider = this.provider;
-        }
-        log.error(
-          `Failed to resolve "${name}" with provider "${this.provider}": ${error instanceof Error ? error.message : error}`
-        );
-        throw error;
-      })
-      .finally(() => {
-        this._pendingResolves.delete(name);
-      });
-
-    this._pendingResolves.set(name, promise);
-    return promise;
+    try {
+      return await withAbortSignal(
+        resolveWithClient({ client: this._client!, name }),
+        combinedSignal
+      );
+    } catch (error) {
+      if (error instanceof Error && (error as any).details) {
+        (error as any).details.provider = this.provider;
+      }
+      log.error(
+        `Failed to resolve "${name}" with provider "${this.provider}": ${error instanceof Error ? error.message : error}`
+      );
+      throw error;
+    }
   }
 
   async destroy(): Promise<void> {
@@ -416,9 +278,6 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
       );
     }
 
-    await this.runtime.releaseCache(this.dataPath);
-
     this._client = null;
-    this._cachePromise = null;
   }
 }

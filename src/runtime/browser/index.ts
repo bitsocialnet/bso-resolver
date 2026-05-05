@@ -1,4 +1,3 @@
-import { createCache, isCacheStale } from "./cache.js";
 import {
   BaseBsoResolver,
   createResolverRuntime,
@@ -6,17 +5,11 @@ import {
 } from "../shared/resolver.js";
 
 export type { BsoResolveResult, BsoResolverArgs } from "../shared/resolver.js";
-export type { CacheEntry, ResolverCache } from "../shared/cache.js";
 
-const runtime = createResolverRuntime({ createCache, isCacheStale });
-
-export function _resetRegistries(): void {
-  runtime.resetRegistries();
-}
+const runtime = createResolverRuntime();
 
 export class BsoResolver extends BaseBsoResolver {
   constructor(args: BsoResolverArgs) {
     super(args, runtime);
   }
 }
-

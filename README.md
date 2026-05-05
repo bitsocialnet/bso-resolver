@@ -85,21 +85,21 @@ The following free public mainnet RPCs have been verified to resolve `.bso` name
 
 ## API
 
-### `new BsoResolver({ key, provider, dataPath? })`
+### `new BsoResolver({ key, provider })`
 
-Creates a resolver instance with a shared viem client and persistent cache. Both are lazily initialized on the first `resolve()` call.
+Creates a resolver instance with a viem client. The client is lazily initialized on the first `resolve()` call.
 
 - **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).origin}` `` — `origin` keeps the scheme so `https://…` and `wss://…` to the same host don't collide)
 - **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL or a Websocket RPC URL
-- **`dataPath`** (optional, Node only) - Enables SQLite persistence for the cache. Browser builds do not support SQLite and will throw if `dataPath` is provided.
 
 ```ts
 const resolver = new BsoResolver({
   key: "bso-viem",
   provider: "viem",
-  dataPath: "/path/to/data", // optional — enables SQLite persistence
 });
 ```
+
+> **Caching is not handled here.** This module is a thin network wrapper. Callers (such as `pkc-js`) are responsible for caching resolution results. Every call to `resolve()` makes a fresh RPC request.
 
 #### `resolver.resolve({ name, abortSignal? }): Promise<BsoResolveResult | undefined>`
 
@@ -121,24 +121,11 @@ interface BsoResolveResult {
   /** Required. The IPNS public key from the first segment of the
    *  `bitsocial` TXT record. */
   publicKey: string;
-  /** (internal) Always present on a successful resolve. Either "viem"
-   *  or the HTTP/HTTPS/WebSocket RPC URL of the provider that produced
-   *  this result. On a cache hit, this reflects the provider of
-   *  whichever BsoResolver instance originally wrote the cache entry,
-   *  which can differ from the current instance's provider when caches
-   *  are shared via dataPath. */
-  _resolvedBy?: string;
-  /** (internal) Present only on cache hits. Stringified ms-since-epoch
-   *  when the cache entry was written. Absent on fresh-from-RPC results.
-   *  Parse with Number(result._cachedAtMs). */
-  _cachedAtMs?: string;
   /** Custom metadata from key=value segments in the TXT record.
-   *  Reserved keys: publicKey, _resolvedBy, _cachedAtMs. */
-  [key: string]: string | undefined;
+   *  Reserved key: publicKey. */
+  [key: string]: string;
 }
 ```
-
-> **Internal API — do not use in production.** Any field prefixed with `_` (currently `_resolvedBy` and `_cachedAtMs`, and any added later) is considered internal and unstable. These fields are not part of the public contract, are not consumed by `pkc-js`, and may change or be removed at any time without a major version bump. Use them only for debugging or local logging — never rely on them in production code.
 
 > **Note:** Each `bitsocial` TXT record value points to a single identity — either a community or an author. A future revision of the format may allow both in the same record.
 
@@ -148,41 +135,13 @@ Returns `true` if the name ends with `.bso` (case-insensitive).
 
 #### `resolver.destroy(): Promise<void>`
 
-Releases shared resources (viem client, cache/DB connection). The underlying resource is only closed when the last resolver using it is destroyed. Idempotent — safe to call multiple times.
+Aborts in-flight resolves, closes the WebSocket connection (if any), and releases the viem client. Idempotent — safe to call multiple times.
 
 After `destroy()`, calling `resolve()` will throw.
 
-## Cache behavior
+## Caching
 
-| Environment | `dataPath` provided? | Cache backend |
-|---|---|---|
-| Node | Yes | SQLite via `better-sqlite3` (stored at `<dataPath>/.bso-resolver/bso-cache.sqlite`) |
-| Browser | No | IndexedDB (`bso-resolver-cache` database) |
-| Any | No + no IndexedDB | In-memory `Map` |
-
-All cache entries expire after 1 hour (TTL).
-
-## Concurrency
-
-### Same process, multiple resolvers, same provider
-
-Resolvers share a single viem client via an internal reference-counted registry. No conflicts.
-
-### Same process, multiple resolvers, same `dataPath`
-
-Resolvers share a single SQLite connection via an internal reference-counted registry. All operations go through the same `better-sqlite3` instance (synchronous, single-threaded). No conflicts.
-
-### Multiple processes, same SQLite database file
-
-Each process opens its own connection. SQLite WAL mode allows concurrent reads. Writes are serialized by SQLite internally with a 5-second busy timeout (`busy_timeout = 5000`). Cache writes are simple `INSERT OR REPLACE` operations that complete in microseconds, so contention is negligible.
-
-### Multiple browser tabs, same IndexedDB
-
-IndexedDB handles concurrency natively via transactions. No conflicts.
-
-### Lifecycle / cleanup
-
-Call `resolver.destroy()` when done. Resources (DB connections, client references) are released when the last resolver using them is destroyed. Calling `destroy()` is idempotent and safe to call multiple times.
+This module does not cache. Every call to `resolve()` makes a fresh RPC request to the configured provider. Caching is the consumer's responsibility — `pkc-js` (the primary consumer) maintains a persistent name-resolution cache with per-call freshness control and is the right layer for that policy.
 
 ## Testing
 
