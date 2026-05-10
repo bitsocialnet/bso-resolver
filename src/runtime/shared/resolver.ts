@@ -252,7 +252,7 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
       if (error instanceof Error && (error as any).details) {
         (error as any).details.provider = this.provider;
       }
-      log.error(
+      log.trace(
         `Failed to resolve "${name}" with provider "${this.provider}": ${error instanceof Error ? error.message : error}`
       );
       throw error;
