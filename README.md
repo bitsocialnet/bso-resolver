@@ -12,7 +12,7 @@ npm install @bitsocial/bso-resolver
 
 ## With pkc-js
 
-If you're wiring this into [`pkc-js`](https://github.com/pkc/pkc-js), create resolver instances per provider:
+If you're wiring this into [`pkc-js`](https://github.com/pkcprotocol/pkc-js), create resolver instances per provider:
 
 ```ts
 import Pkc from "@pkcprotocol/pkc-js";
@@ -187,7 +187,7 @@ Publishing is automated via `.github/workflows/publish.yml`. When `release-it` c
 1. Create the `@bitsocial` organization on [npmjs.com](https://www.npmjs.com)
 2. Do an initial manual publish: `npm login && npm run build && npm publish --access public`
 3. On npmjs.com, go to the package settings → Publishing access → Configure trusted publishing
-4. Add: owner=`bitsocialhq`, repo=`bso-resolver`, workflow=`publish.yml`
+4. Add: owner=`bitsocialnet`, repo=`bso-resolver`, workflow=`publish.yml`
 
 ## License
 
