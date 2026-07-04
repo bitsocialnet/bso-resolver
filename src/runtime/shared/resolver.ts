@@ -144,9 +144,11 @@ async function withAbortSignal<T>(
 async function resolveWithClient({
   client,
   name,
+  blockNumber,
 }: {
   client: PublicClient;
   name: string;
+  blockNumber?: bigint | undefined;
 }): Promise<BsoResolveResult | undefined> {
   const resolvedName = name.includes(".") ? name : `${name}.bso`;
 
@@ -161,6 +163,7 @@ async function resolveWithClient({
     const result = await client.getEnsText({
       name: normalized,
       key: "bitsocial",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
     });
 
     if (result == null) {
@@ -174,7 +177,7 @@ async function resolveWithClient({
     }
 
     if (error instanceof Error) {
-      (error as any).details = { name, resolvedName, ethName, normalized, chain: "mainnet" };
+      (error as any).details = { name, resolvedName, ethName, normalized, blockNumber, chain: "mainnet" };
     }
     throw error;
   }
@@ -225,9 +228,11 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
 
   async resolve({
     name,
+    blockNumber,
     abortSignal,
   }: {
     name: string;
+    blockNumber?: bigint;
     abortSignal?: AbortSignal;
   }): Promise<BsoResolveResult | undefined> {
     if (this._destroyed) {
@@ -245,7 +250,7 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
 
     try {
       return await withAbortSignal(
-        resolveWithClient({ client: this._client!, name }),
+        resolveWithClient({ client: this._client!, name, blockNumber }),
         combinedSignal
       );
     } catch (error) {

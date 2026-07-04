@@ -67,6 +67,12 @@ const record2 = await resolver.resolve({
   abortSignal: controller.signal,
 });
 
+// Optional: pin resolution to a historical block for deterministic reads
+const record3 = await resolver.resolve({
+  name: "example.bso",
+  blockNumber: 21000000n,
+});
+
 // Clean up when done
 await resolver.destroy();
 await resolver2.destroy();
@@ -101,11 +107,12 @@ const resolver = new BsoResolver({
 
 > **Caching is not handled here.** This module is a thin network wrapper. Callers (such as `pkc-js`) are responsible for caching resolution results. Every call to `resolve()` makes a fresh RPC request.
 
-#### `resolver.resolve({ name, abortSignal? }): Promise<BsoResolveResult | undefined>`
+#### `resolver.resolve({ name, blockNumber?, abortSignal? }): Promise<BsoResolveResult | undefined>`
 
 Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
+- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically.
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns a [`BsoResolveResult`](#return-type-bsoresolveresult), or `undefined` if not found.
