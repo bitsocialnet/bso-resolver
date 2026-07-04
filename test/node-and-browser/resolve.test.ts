@@ -237,6 +237,41 @@ describe("BsoResolver", () => {
     await resolver.destroy();
   });
 
+  it("forwards blockNumber to getEnsText when provided", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    const result = await resolver.resolve({ name: "example.bso", blockNumber: 21000000n });
+
+    expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
+    expect(getMockGetEnsText()).toHaveBeenCalledWith({
+      name: "example.eth",
+      key: "bitsocial",
+      blockNumber: 21000000n,
+    });
+
+    await resolver.destroy();
+  });
+
+  it("resolves at head (blockNumber undefined) when omitted", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "example.bso" });
+
+    expect(getMockGetEnsText()).toHaveBeenCalledWith({
+      name: "example.eth",
+      key: "bitsocial",
+    });
+    expect(getMockGetEnsText().mock.calls[0][0]).not.toHaveProperty("blockNumber");
+
+    await resolver.destroy();
+  });
+
   it("propagates errors from viem with details", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockRejectedValue(new Error("RPC error")),
