@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.9](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.8...v0.0.9) (2026-07-04)
+
+### Features
+
+* **resolve:** support resolving at a historical block ([69e46c5](https://github.com/bitsocialnet/bso-resolver/commit/69e46c59fcfe7488b3ef90c1f7f4be0398326f2f)), closes [#3](https://github.com/bitsocialnet/bso-resolver/issues/3)
+
 ## [0.0.8](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.7...v0.0.8) (2026-05-05)
 
 ### Bug Fixes
