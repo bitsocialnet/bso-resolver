@@ -1,6 +1,6 @@
 {
   "name": "@bitsocial/bso-resolver",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "engines": {

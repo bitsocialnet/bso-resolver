@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.10](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.9...v0.0.10) (2026-07-14)
+
+### Features
+
+* **resolve:** batch concurrent resolves into a single multicall eth_call ([cf917e8](https://github.com/bitsocialnet/bso-resolver/commit/cf917e858c8e2fb3eaea838517932e889f12761a)), closes [#5](https://github.com/bitsocialnet/bso-resolver/issues/5)
+
+### Bug Fixes
+
+* **ci:** clean-regenerate lock file so utf-8-validate v5 entries survive ([181e095](https://github.com/bitsocialnet/bso-resolver/commit/181e095ac6838e6c10c74a5456941c618d76b9e8))
+
 ## [0.0.9](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.8...v0.0.9) (2026-07-04)
 
 ### Features
