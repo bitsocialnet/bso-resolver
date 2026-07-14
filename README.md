@@ -68,9 +68,10 @@ const record2 = await resolver.resolve({
 });
 
 // Optional: pin resolution to a historical block for deterministic reads
+// (must be >= 23085558, the block where the ENS universal resolver was deployed)
 const record3 = await resolver.resolve({
   name: "example.bso",
-  blockNumber: 21000000n,
+  blockNumber: 23500000n,
 });
 
 // Clean up when done
@@ -91,12 +92,13 @@ The following free public mainnet RPCs have been verified to resolve `.bso` name
 
 ## API
 
-### `new BsoResolver({ key, provider })`
+### `new BsoResolver({ key, provider, batch? })`
 
 Creates a resolver instance with a viem client. The client is lazily initialized on the first `resolve()` call.
 
 - **`key`** - Unique identifier for this resolver instance (e.g. `` `bso-${new URL(chainProviderUrl).origin}` `` — `origin` keeps the scheme so `https://…` and `wss://…` to the same host don't collide)
 - **`provider`** - Either `"viem"` for the default public transport, or an HTTP(S) RPC URL or a Websocket RPC URL
+- **`batch`** (optional) - Multicall batching of concurrent resolves. Defaults to `{ wait: 200, batchSize: 100_000 }`. Pass `false` to disable, or an object to tune (see [Batching](#batching))
 
 ```ts
 const resolver = new BsoResolver({
@@ -112,7 +114,7 @@ const resolver = new BsoResolver({
 Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
-- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically.
+- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be `>= 23085558` — viem resolves through the ENS universal resolver, which was deployed at that block, and throws `ChainDoesNotSupportContract` for older blocks.
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns a [`BsoResolveResult`](#return-type-bsoresolveresult), or `undefined` if not found.
@@ -145,6 +147,32 @@ Returns `true` if the name ends with `.bso` (case-insensitive).
 Aborts in-flight resolves, closes the WebSocket connection (if any), and releases the viem client. Idempotent — safe to call multiple times.
 
 After `destroy()`, calling `resolve()` will throw.
+
+## Batching
+
+Concurrent `resolve()` calls on the same resolver instance are batched into a single `Multicall3.aggregate3` `eth_call` (via viem's client-level multicall batching). Public RPC endpoints rate-limit exactly the burst pattern that name resolution produces (many small `eth_call`s in a short window), so batching reduces the possibility of RPC throttling — on a production cold start it cut 63 RPC requests down to 6 with identical results.
+
+The default is `{ wait: 200, batchSize: 100_000 }`:
+
+- **`wait`** - Milliseconds to wait for more concurrent resolves before flushing the batch. Each resolve pays up to this much extra latency, which is acceptable because name resolution is a background path whose results are cached by the caller. Same semantics as viem's `batch.multicall.wait`.
+- **`batchSize`** - Maximum calldata size in bytes before a batch is split. Each resolve is ~500-600 bytes, so viem's default of 1024 would split after ~2 calls; the large default effectively means "never split". Same semantics as viem's `batch.multicall.batchSize`.
+
+```ts
+// Default: batch concurrent resolves within a 200ms window
+new BsoResolver({ key, provider });
+
+// Only coalesce resolves issued in the same tick (no added latency)
+new BsoResolver({ key, provider, batch: { wait: 0 } });
+
+// Disable batching: every resolve is an individual eth_call immediately
+new BsoResolver({ key, provider, batch: false });
+```
+
+Notes:
+
+- Resolves pinned to a `blockNumber` only batch with other resolves at the same block; resolves at different blocks are never merged.
+- Each call in the batch is independent (`allowFailure: true`) — one failing name does not poison the batch, and CCIP-read (offchain) names keep working.
+- If the batched RPC call itself fails, all names in that batch fail together; callers like `pkc-js` fall back to the next provider per name, where they re-batch.
 
 ## Caching
 

@@ -243,13 +243,13 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso", blockNumber: 21000000n });
+    const result = await resolver.resolve({ name: "example.bso", blockNumber: 23500000n });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
-      blockNumber: 21000000n,
+      blockNumber: 23500000n,
     });
 
     await resolver.destroy();
@@ -268,6 +268,61 @@ describe("BsoResolver", () => {
       key: "bitsocial",
     });
     expect(getMockGetEnsText().mock.calls[0][0]).not.toHaveProperty("blockNumber");
+
+    await resolver.destroy();
+  });
+
+  it("enables multicall batching by default", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "example.bso" });
+
+    expect(createPublicClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        batch: { multicall: { wait: 200, batchSize: 100_000 } },
+      })
+    );
+
+    await resolver.destroy();
+  });
+
+  it("merges custom batch options with defaults", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({
+      key: "bso-viem",
+      provider: "viem",
+      batch: { wait: 0 },
+    });
+    await resolver.resolve({ name: "example.bso" });
+
+    expect(createPublicClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        batch: { multicall: { wait: 0, batchSize: 100_000 } },
+      })
+    );
+
+    await resolver.destroy();
+  });
+
+  it("disables batching with batch: false", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({
+      key: "bso-viem",
+      provider: "viem",
+      batch: false,
+    });
+    await resolver.resolve({ name: "example.bso" });
+
+    expect((createPublicClient as Mock).mock.calls[0][0]).not.toHaveProperty("batch");
 
     await resolver.destroy();
   });

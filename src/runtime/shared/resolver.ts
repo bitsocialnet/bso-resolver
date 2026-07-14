@@ -15,13 +15,37 @@ export interface BsoResolveResult {
   [key: string]: string;
 }
 
+export interface BsoResolverBatchOptions {
+  /** Milliseconds to wait for more concurrent resolves before flushing the
+   *  batch as a single Multicall3.aggregate3 eth_call. Same semantics as
+   *  viem's `batch.multicall.wait`. */
+  wait?: number;
+  /** Maximum calldata size (in bytes) of a batched call before it is split.
+   *  Same semantics as viem's `batch.multicall.batchSize`. Each resolve is
+   *  ~500-600 bytes, so viem's default of 1024 would split after ~2 calls. */
+  batchSize?: number;
+}
+
+export const DEFAULT_BATCH_OPTIONS: Required<BsoResolverBatchOptions> = {
+  wait: 200,
+  batchSize: 100_000,
+};
+
 export interface BsoResolverArgs {
   key: string;
   provider: string;
+  /** Batch concurrent resolves into a single Multicall3.aggregate3 eth_call.
+   *  Defaults to `DEFAULT_BATCH_OPTIONS`. Pass `false` to disable batching,
+   *  or `{ wait: 0 }` to only coalesce same-tick bursts. */
+  batch?: false | BsoResolverBatchOptions;
 }
 
 export interface ResolverRuntime {
-  createClient(provider: string, destroySignal: AbortSignal): PublicClient;
+  createClient(
+    provider: string,
+    destroySignal: AbortSignal,
+    batch?: false | BsoResolverBatchOptions
+  ): PublicClient;
 }
 
 export function isBsoAliasDomain(address: string): boolean {
@@ -184,7 +208,11 @@ async function resolveWithClient({
 }
 
 class ResolverRuntimeImpl implements ResolverRuntime {
-  createClient(provider: string, destroySignal: AbortSignal): PublicClient {
+  createClient(
+    provider: string,
+    destroySignal: AbortSignal,
+    batch?: false | BsoResolverBatchOptions
+  ): PublicClient {
     const url = provider === "viem" ? undefined : provider;
     let transport;
 
@@ -194,7 +222,13 @@ class ResolverRuntimeImpl implements ResolverRuntime {
       transport = http(url, { fetchOptions: { signal: destroySignal } });
     }
 
-    return createPublicClient({ chain: mainnet, transport });
+    return createPublicClient({
+      chain: mainnet,
+      transport,
+      ...(batch === false
+        ? {}
+        : { batch: { multicall: { ...DEFAULT_BATCH_OPTIONS, ...batch } } }),
+    });
   }
 }
 
@@ -211,14 +245,16 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
   readonly provider: string;
 
   private readonly runtime: ResolverRuntime;
+  private readonly batch: false | BsoResolverBatchOptions | undefined;
   private readonly _destroyController = new AbortController();
   private _client: PublicClient | null = null;
   private _initialized = false;
   private _destroyed = false;
 
-  protected constructor({ key, provider }: BsoResolverArgs, runtime: ResolverRuntime) {
+  protected constructor({ key, provider, batch }: BsoResolverArgs, runtime: ResolverRuntime) {
     this.key = key;
     this.provider = provider;
+    this.batch = batch;
     this.runtime = runtime;
   }
 
@@ -240,7 +276,11 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
     }
 
     if (!this._initialized) {
-      this._client = this.runtime.createClient(this.provider, this._destroyController.signal);
+      this._client = this.runtime.createClient(
+        this.provider,
+        this._destroyController.signal,
+        this.batch
+      );
       this._initialized = true;
     }
 

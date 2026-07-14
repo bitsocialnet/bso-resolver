@@ -4,7 +4,8 @@ import {
   type BsoResolverArgs,
 } from "../shared/resolver.js";
 
-export type { BsoResolveResult, BsoResolverArgs } from "../shared/resolver.js";
+export type { BsoResolveResult, BsoResolverArgs, BsoResolverBatchOptions } from "../shared/resolver.js";
+export { DEFAULT_BATCH_OPTIONS } from "../shared/resolver.js";
 
 const runtime = createResolverRuntime();
 
