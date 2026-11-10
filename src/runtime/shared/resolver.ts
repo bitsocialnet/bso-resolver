@@ -251,7 +251,6 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
   private readonly batch: false | BsoResolverBatchOptions | undefined;
   private readonly _destroyController = new AbortController();
   private _client: PublicClient | null = null;
-  private _initialized = false;
   private _destroyed = false;
 
   protected constructor({ key, provider, batch }: BsoResolverArgs, runtime: ResolverRuntime) {
@@ -278,13 +277,12 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
       throw new Error("Cannot resolve after destroy() has been called.");
     }
 
-    if (!this._initialized) {
+    if (!this._client) {
       this._client = this.runtime.createClient(
         this.provider,
         this._destroyController.signal,
         this.batch
       );
-      this._initialized = true;
     }
 
     const combinedSignal = abortSignal
@@ -308,7 +306,7 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
   }
 
   async destroy(): Promise<void> {
-    if (!this._initialized || this._destroyed) return;
+    if (this._destroyed) return;
     this._destroyed = true;
 
     // Abort all in-flight resolves and cancel HTTP fetches via transport signal

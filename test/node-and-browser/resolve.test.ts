@@ -565,6 +565,16 @@ describe("BsoResolver lifecycle", () => {
     await resolver.destroy(); // should not throw
   });
 
+  it("throws on resolve() after destroy() even if resolve() was never called before", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.destroy();
+
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
+    expect(createPublicClient).not.toHaveBeenCalled();
+  });
+
   it("canResolve works without initialization", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     expect(resolver.canResolve({ name: "example.bso" })).toBe(true);
