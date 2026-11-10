@@ -381,6 +381,30 @@ describe("BsoResolver abort and destroy", () => {
     await resolver.destroy();
   });
 
+  it("does not start the lookup for a pre-aborted signal", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockRejectedValue(new Error("RPC error")),
+    }));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({
+        name: "example.bso",
+        abortSignal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    // A started lookup would send an eth_call and, when it fails, leave a
+    // rejection nobody handles.
+    expect(getMockGetEnsText()).not.toHaveBeenCalled();
+
+    await resolver.destroy();
+  });
+
   it("rejects with AbortError when aborted during in-flight resolution", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn(

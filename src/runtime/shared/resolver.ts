@@ -135,15 +135,18 @@ function parseBitsocialTxtRecord(record: string): BsoResolveResult {
   return parsed;
 }
 
+// Takes a function rather than a promise so that an already-aborted signal
+// stops the work before it starts, instead of leaving it running unobserved.
 async function withAbortSignal<T>(
-  promise: Promise<T>,
+  start: () => Promise<T>,
   abortSignal?: AbortSignal
 ): Promise<T> {
   if (!abortSignal) {
-    return promise;
+    return start();
   }
 
   throwIfAborted(abortSignal);
+  const promise = start();
 
   return await new Promise<T>((resolve, reject) => {
     const onAbort = () => {
@@ -290,7 +293,7 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
 
     try {
       return await withAbortSignal(
-        resolveWithClient({ client: this._client!, name, blockNumber }),
+        () => resolveWithClient({ client: this._client!, name, blockNumber }),
         combinedSignal
       );
     } catch (error) {
