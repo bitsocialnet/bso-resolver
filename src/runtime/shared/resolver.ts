@@ -218,6 +218,10 @@ async function resolveWithClient({
   }
 }
 
+function isSocketClosed(socket: WebSocket): boolean {
+  return socket.readyState === socket.CLOSING || socket.readyState === socket.CLOSED;
+}
+
 function closeRpcClient(rpcClient: { close(): void }, provider: string): void {
   try {
     rpcClient.close();
@@ -232,7 +236,9 @@ function closeRpcClient(rpcClient: { close(): void }, provider: string): void {
 // - once destroyed, requests (including viem's retries and a multicall batch
 //   still waiting to flush) fail with AbortError instead of dialing a socket;
 // - destroy closes the socket this transport connected, without dialing one
-//   and without waiting for a connect still in progress.
+//   and without waiting for a connect still in progress;
+// - a socket closed by the server or the network is replaced on the next
+//   request.
 function createWebSocketTransport(url: string, destroySignal: AbortSignal): Transport<"webSocket"> {
   const transport = webSocket(url, { reconnect: false });
 
@@ -269,8 +275,21 @@ function createWebSocketTransport(url: string, destroySignal: AbortSignal): Tran
         ...config,
         request: (async ({ method, params }) => {
           throwIfAborted(destroySignal);
-          const client = await (rpcClient ?? connect());
+          const current = rpcClient ?? connect();
+          let client = await current;
           throwIfAborted(destroySignal);
+
+          // With reconnect off, viem keeps a socket closed by the server or
+          // the network in its cache and fails every later request on it.
+          // Closing that client evicts it, so connect again.
+          if (isSocketClosed(client.socket)) {
+            if (rpcClient === current) {
+              rpcClient = undefined;
+              closeRpcClient(client, url);
+            }
+            client = await (rpcClient ?? connect());
+            throwIfAborted(destroySignal);
+          }
 
           // Send on the client this transport tracks, as viem's own webSocket
           // request does after its cache lookup. Going through config.request

@@ -270,4 +270,24 @@ describe("BsoResolver WebSocket transport (real viem client)", () => {
     expect(socketA!.ethCalls).toHaveLength(0);
     expect(socketB!.ethCalls).toHaveLength(2);
   });
+
+  it("opens a new socket on the next resolve after the server closes the connection", async () => {
+    const resolver = new BsoResolver({ key: "bso-ws", provider: uniqueProvider(), batch: false });
+    await expect(resolver.resolve({ name: "a.bso" })).resolves.toEqual({
+      publicKey: VALID_PUBLIC_KEY,
+    });
+
+    FakeWebSocket.instances[0]!.drop();
+
+    await expect(resolver.resolve({ name: "b.bso" })).resolves.toEqual({
+      publicKey: VALID_PUBLIC_KEY,
+    });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1]!.ethCalls).toHaveLength(1);
+
+    await resolver.destroy();
+    await vi.waitFor(() =>
+      expect(FakeWebSocket.instances[1]!.readyState).toBe(FakeWebSocket.CLOSED)
+    );
+  });
 });
