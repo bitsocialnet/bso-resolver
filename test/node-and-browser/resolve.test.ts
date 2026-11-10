@@ -44,7 +44,7 @@ describe("BsoResolver", () => {
     const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
+    expect(http).toHaveBeenCalledWith(undefined, { fetchFn: expect.any(Function) });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -91,7 +91,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
     await resolver.resolve({ name: "example.bso" });
 
-    expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchOptions: { signal: expect.any(AbortSignal) } });
+    expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchFn: expect.any(Function) });
 
     await resolver.destroy();
   });
@@ -511,7 +511,7 @@ describe("BsoResolver abort and destroy", () => {
     ).rejects.toThrow("Cannot resolve after destroy() has been called.");
   });
 
-  it("passes destroy signal to http() transport fetchOptions", async () => {
+  it("http() transport fetch keeps viem's request signal and adds the destroy signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
@@ -519,15 +519,29 @@ describe("BsoResolver abort and destroy", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     await resolver.resolve({ name: "example.bso" });
 
-    // Capture the signal passed to http()
-    const httpCall = (http as Mock).mock.calls[0];
-    const signal = httpCall[1]?.fetchOptions?.signal;
-    expect(signal).toBeInstanceOf(AbortSignal);
-    expect(signal.aborted).toBe(false);
+    // Capture the fetchFn passed to http() and the signals it hands to fetch
+    const fetchFn = (http as Mock).mock.calls[0][1].fetchFn;
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", async (_url: unknown, init?: RequestInit) => {
+      signals.push(init!.signal!);
+      return new Response("{}");
+    });
 
-    await resolver.destroy();
+    try {
+      const requestController = new AbortController();
+      await fetchFn("https://rpc.example.com", { signal: requestController.signal });
+      await fetchFn("https://rpc.example.com", {});
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
 
-    expect(signal.aborted).toBe(true);
+      // viem aborts its request signal when the request times out
+      requestController.abort();
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+
+      await resolver.destroy();
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

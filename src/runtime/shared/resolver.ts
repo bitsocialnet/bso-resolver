@@ -222,7 +222,18 @@ class ResolverRuntimeImpl implements ResolverRuntime {
     if (url && isWebSocketUrl(url)) {
       transport = webSocket(url, { reconnect: false });
     } else {
-      transport = http(url, { fetchOptions: { signal: destroySignal } });
+      transport = http(url, {
+        // viem aborts init.signal when its per-request timeout fires. Passing
+        // the destroy signal as fetchOptions.signal would replace that signal
+        // and disable the timeout, so combine the two instead.
+        fetchFn: (input, init) =>
+          fetch(input, {
+            ...init,
+            signal: init?.signal
+              ? AbortSignal.any([init.signal, destroySignal])
+              : destroySignal,
+          }),
+      });
     }
 
     return createPublicClient({
