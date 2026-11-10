@@ -5,7 +5,9 @@ vi.mock("viem", () => ({
   createPublicClient: vi.fn(() => ({
     getEnsText: vi.fn(),
   })),
+  createTransport: vi.fn(),
   http: vi.fn(() => "mock-http-transport"),
+  RpcRequestError: class RpcRequestError extends Error {},
   webSocket: vi.fn(() => "mock-ws-transport"),
 }));
 
@@ -451,65 +453,8 @@ describe("BsoResolver abort and destroy", () => {
     await expect(pending2).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("destroy() closes WebSocket connection", async () => {
-    const mockClose = vi.fn();
-    const mockRpcClient = { close: mockClose };
-
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockResolvedValue(mockRpcClient),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    expect(mockClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("destroy() swallows getRpcClient() rejection and still completes", async () => {
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockRejectedValue(new Error("WebSocket already closed")),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    await expect(
-      resolver.resolve({ name: "example.bso" })
-    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
-  });
-
-  it("destroy() swallows WebSocket close() throws and still completes", async () => {
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockResolvedValue({
-          close: vi.fn(() => { throw new Error("close failed"); }),
-        }),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    await expect(
-      resolver.resolve({ name: "example.bso" })
-    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
-  });
+  // WebSocket close-on-destroy is covered against the real viem client in
+  // websocket-transport.test.ts.
 
   it("http() transport fetch keeps viem's request signal and adds the destroy signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({

@@ -1,6 +1,14 @@
 import Logger from "@pkcprotocol/pkc-logger";
 import type { NameResolverInterface } from "@pkcprotocol/pkc-js";
-import { createPublicClient, http, webSocket, type PublicClient } from "viem";
+import {
+  createPublicClient,
+  createTransport,
+  http,
+  RpcRequestError,
+  webSocket,
+  type PublicClient,
+  type Transport,
+} from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 
@@ -210,6 +218,76 @@ async function resolveWithClient({
   }
 }
 
+function closeRpcClient(rpcClient: { close(): void }, provider: string): void {
+  try {
+    rpcClient.close();
+  } catch (error) {
+    log.error(
+      `Failed to close WebSocket for provider "${provider}": ${error instanceof Error ? error.message : error}`
+    );
+  }
+}
+
+// viem's webSocket transport, tied to the resolver's destroy signal:
+// - once destroyed, requests (including viem's retries and a multicall batch
+//   still waiting to flush) fail with AbortError instead of dialing a socket;
+// - destroy closes the socket this transport connected, without dialing one
+//   and without waiting for a connect still in progress.
+function createWebSocketTransport(url: string, destroySignal: AbortSignal): Transport<"webSocket"> {
+  const transport = webSocket(url, { reconnect: false });
+
+  return (params) => {
+    const { config, value } = transport(params);
+    const getRpcClient = () => value!.getRpcClient();
+    // The socket client requests go through, or the connect in progress.
+    let rpcClient: ReturnType<typeof getRpcClient> | undefined;
+
+    const connect = () => {
+      const connecting = getRpcClient();
+      rpcClient = connecting;
+      // Forget a failed connect so the next request dials again.
+      connecting.catch(() => {
+        if (rpcClient === connecting) rpcClient = undefined;
+      });
+      return connecting;
+    };
+
+    destroySignal.addEventListener(
+      "abort",
+      () => {
+        rpcClient?.then(
+          (client) => closeRpcClient(client, url),
+          () => {}
+        );
+        rpcClient = undefined;
+      },
+      { once: true }
+    );
+
+    return createTransport(
+      {
+        ...config,
+        request: (async ({ method, params }) => {
+          throwIfAborted(destroySignal);
+          const client = await (rpcClient ?? connect());
+          throwIfAborted(destroySignal);
+
+          // Send on the client this transport tracks, as viem's own webSocket
+          // request does after its cache lookup. Going through config.request
+          // would look the client up in viem's per-URL cache again, which
+          // another resolver on the same URL can have replaced or emptied,
+          // and reach a socket that this transport neither checks nor closes.
+          const body = { method, params };
+          const { error, result } = await client.requestAsync({ body, timeout: config.timeout });
+          if (error) throw new RpcRequestError({ body, error, url });
+          return result;
+        }) as typeof config.request,
+      },
+      value
+    );
+  };
+}
+
 class ResolverRuntimeImpl implements ResolverRuntime {
   createClient(
     provider: string,
@@ -220,7 +298,7 @@ class ResolverRuntimeImpl implements ResolverRuntime {
     let transport;
 
     if (url && isWebSocketUrl(url)) {
-      transport = webSocket(url, { reconnect: false });
+      transport = createWebSocketTransport(url, destroySignal);
     } else {
       transport = http(url, {
         // viem aborts init.signal when its per-request timeout fires. Passing
@@ -320,20 +398,9 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
     if (this._destroyed) return;
     this._destroyed = true;
 
-    // Abort all in-flight resolves and cancel HTTP fetches via transport signal
+    // Abort all in-flight resolves. The transports listen to this signal: HTTP
+    // fetches are cancelled and the WebSocket, if one was connected, is closed.
     this._destroyController.abort();
-
-    // Close WebSocket connection if applicable
-    try {
-      if (this._client?.transport?.type === "webSocket") {
-        const rpcClient = await (this._client.transport as any).getRpcClient();
-        rpcClient.close();
-      }
-    } catch (error) {
-      log.error(
-        `Failed to close WebSocket for provider "${this.provider}": ${error instanceof Error ? error.message : error}`
-      );
-    }
 
     this._client = null;
   }
