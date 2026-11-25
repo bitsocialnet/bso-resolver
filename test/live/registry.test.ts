@@ -101,31 +101,35 @@ describe(`BSIP-13 registry on ${BSO_REGISTRY.chain.name} (live)`, () => {
 
   it("resolves a burst of concurrent names in a single eth_call", async () => {
     await withResolver(async (resolver) => {
+      // Restored in `finally` so a failed attempt's calls are not counted
+      // against the next provider.
       const fetchSpy = vi.spyOn(globalThis, "fetch");
+      try {
+        const results = await Promise.all(
+          [
+            "3dcg-posting.bso",
+            "blog.bitsocial.bso",
+            "5chan.bso",
+            "日本語.bso",
+            "bso-resolver-live-test-never-registered-7f3a9c.bso",
+          ].map((name) => resolver.resolve({ name }))
+        );
 
-      const results = await Promise.all(
-        [
-          "3dcg-posting.bso",
-          "blog.bitsocial.bso",
-          "5chan.bso",
-          "日本語.bso",
-          "bso-resolver-live-test-never-registered-7f3a9c.bso",
-        ].map((name) => resolver.resolve({ name }))
-      );
+        expect(results).toEqual([
+          { publicKey: "12D3KooWBRCcwxWTx23tyK7Uhqs9ViE3MnSgvWSLip2ikrWaD3c2" },
+          { publicKey: "12D3KooWSuX9mVvLCfPa1f421Le88phwhuqMHEcW4pd6Q9uEjAcQ" },
+          undefined,
+          undefined,
+          undefined,
+        ]);
 
-      expect(results).toEqual([
-        { publicKey: "12D3KooWBRCcwxWTx23tyK7Uhqs9ViE3MnSgvWSLip2ikrWaD3c2" },
-        { publicKey: "12D3KooWSuX9mVvLCfPa1f421Le88phwhuqMHEcW4pd6Q9uEjAcQ" },
-        undefined,
-        undefined,
-        undefined,
-      ]);
-
-      const ethCalls = fetchSpy.mock.calls.filter(([, init]) =>
-        String(init?.body).includes('"eth_call"')
-      );
-      expect(ethCalls).toHaveLength(1);
-      fetchSpy.mockRestore();
+        const ethCalls = fetchSpy.mock.calls.filter(([, init]) =>
+          String(init?.body).includes('"eth_call"')
+        );
+        expect(ethCalls).toHaveLength(1);
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 

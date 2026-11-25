@@ -70,10 +70,11 @@ const record2 = await resolver.resolve({
 });
 
 // Optional: pin resolution to a historical block for deterministic reads
-// (must be at or after the block the registry was deployed at, see resolve() below)
+// (must be at or after the block the registry was deployed at, see resolve() below;
+// this example block is on the Sepolia test deployment)
 const record3 = await resolver.resolve({
   name: "example.bso",
-  blockNumber: 23500000n,
+  blockNumber: 12203500n,
 });
 
 // Clean up when done
