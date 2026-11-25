@@ -67,15 +67,17 @@ describe(`BSIP-13 registry on ${BSO_REGISTRY.chain.name} (live)`, () => {
     expect(await resolveLive("bitsocial.bso")).toBeUndefined();
   });
 
-  it("reads the sepoliatest.bso record", async () => {
-    // Its record is the placeholder "12D3KooWSepoliaTest", which is not a valid
-    // IPNS key. Rejecting it for that reason (rather than returning undefined)
-    // shows the non-empty record was read from the registry.
-    await withResolver(async (resolver) => {
-      await expect(resolver.resolve({ name: "sepoliatest.bso" })).rejects.toThrow(
-        "Invalid bitsocial TXT record: expected a valid IPNS public key as the first segment."
-      );
+  it("resolves a name registered through commit-reveal after the seed", async () => {
+    // bso-resolver-test.bso was registered for this suite at block 12210251 and
+    // its record set at block 12210253. It is not on the seed list. The
+    // registration expires on 2027-11-25 unless renewed.
+    expect(await resolveLive("bso-resolver-test.bso")).toEqual({
+      publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR",
     });
+    // One block before the record was set, the name is registered with no record.
+    expect(
+      await resolveLive("bso-resolver-test.bso", 12_210_252n, ARCHIVE_PROVIDERS)
+    ).toBeUndefined();
   });
 
   it("returns undefined for seeded names with an empty record", async () => {
