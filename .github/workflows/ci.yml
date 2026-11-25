@@ -6,7 +6,8 @@ on:
     paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'vitest.live.config.ts', 'src/**', 'test/**', '.github/**']
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.58 cannot install browsers on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
