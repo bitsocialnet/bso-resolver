@@ -1,53 +1,32 @@
 import { describe, it, expect } from "vitest";
+import { namehash, normalize } from "viem/ens";
 import {
-  isBsoAliasDomain,
-  normalizeBsoAliasDomain,
+  BSO_REGISTRY,
+  isBsoName,
   canResolveBso,
 } from "../../src/runtime/shared/resolver.js";
 
-describe("isBsoAliasDomain", () => {
-  it("returns true for .eth domains", () => {
-    expect(isBsoAliasDomain("example.eth")).toBe(true);
-  });
-
-  it("returns true for .bso domains", () => {
-    expect(isBsoAliasDomain("example.bso")).toBe(true);
+describe("isBsoName", () => {
+  it("returns true for .bso names", () => {
+    expect(isBsoName("example.bso")).toBe(true);
+    expect(isBsoName("sub.example.bso")).toBe(true);
   });
 
   it("is case-insensitive", () => {
-    expect(isBsoAliasDomain("example.ETH")).toBe(true);
-    expect(isBsoAliasDomain("example.BSO")).toBe(true);
-    expect(isBsoAliasDomain("example.Eth")).toBe(true);
+    expect(isBsoName("example.BSO")).toBe(true);
+    expect(isBsoName("example.Bso")).toBe(true);
   });
 
-  it("returns false for .com domains", () => {
-    expect(isBsoAliasDomain("example.com")).toBe(false);
-  });
-
-  it("returns false for .sol domains", () => {
-    expect(isBsoAliasDomain("example.sol")).toBe(false);
+  it("returns false for other TLDs", () => {
+    expect(isBsoName("example.eth")).toBe(false);
+    expect(isBsoName("example.com")).toBe(false);
+    expect(isBsoName("example.sol")).toBe(false);
+    expect(isBsoName("bso.example.eth")).toBe(false);
   });
 
   it("returns false for strings without a dot", () => {
-    expect(isBsoAliasDomain("example")).toBe(false);
-  });
-});
-
-describe("normalizeBsoAliasDomain", () => {
-  it("converts .bso to .eth", () => {
-    expect(normalizeBsoAliasDomain("example.bso")).toBe("example.eth");
-  });
-
-  it("leaves .eth unchanged", () => {
-    expect(normalizeBsoAliasDomain("example.eth")).toBe("example.eth");
-  });
-
-  it("handles subdomains", () => {
-    expect(normalizeBsoAliasDomain("sub.example.bso")).toBe("sub.example.eth");
-  });
-
-  it("does not replace .bso in the middle of a name", () => {
-    expect(normalizeBsoAliasDomain("bso.example.eth")).toBe("bso.example.eth");
+    expect(isBsoName("example")).toBe(false);
+    expect(isBsoName("bso")).toBe(false);
   });
 });
 
@@ -56,13 +35,28 @@ describe("canResolveBso", () => {
     expect(canResolveBso({ name: "example.bso" })).toBe(true);
   });
 
-  it("returns true for .eth names", () => {
-    expect(canResolveBso({ name: "example.eth" })).toBe(true);
-  });
-
   it("returns false for other names", () => {
+    expect(canResolveBso({ name: "example.eth" })).toBe(false);
     expect(canResolveBso({ name: "example.com" })).toBe(false);
     expect(canResolveBso({ name: "example.sol" })).toBe(false);
     expect(canResolveBso({ name: "example" })).toBe(false);
+  });
+});
+
+describe("BSIP-13 node vectors", () => {
+  it("matches the BSIP-13 example for memes.bso", () => {
+    expect(namehash(normalize("memes.bso"))).toBe(
+      "0x32766e8bc53e343c21d132d673d112b27f0e1aa11965199b934d29721837a941"
+    );
+  });
+});
+
+describe("BSO_REGISTRY", () => {
+  // The registry is not deployed on mainnet yet, so this branch points at the
+  // Sepolia deployment. Remove `.fails` in the commit that switches
+  // BSO_REGISTRY to mainnet: until then this expected failure is the reminder
+  // that the package must not be released.
+  it.fails("points at the mainnet registry", () => {
+    expect(BSO_REGISTRY.chain.id).toBe(1);
   });
 });

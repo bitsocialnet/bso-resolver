@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'src/**', 'test/**', '.github/**']
+    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'vitest.live.config.ts', 'src/**', 'test/**', '.github/**']
   pull_request:
-    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'src/**', 'test/**', '.github/**']
+    paths: ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'vitest.live.config.ts', 'src/**', 'test/**', '.github/**']
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,3 +16,14 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox
       - run: npx tsc --noEmit
       - run: npm test
+  # Reads the deployed BSIP-13 registry through public RPCs. Kept apart from
+  # `npm test` so a failure here is recognisably an RPC/chain problem.
+  test-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: 'npm' }
+      - run: npm ci
+      - run: npm run test:live

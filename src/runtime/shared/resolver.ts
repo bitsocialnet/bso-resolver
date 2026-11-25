@@ -1,10 +1,38 @@
 import Logger from "@pkcprotocol/pkc-logger";
 import type { NameResolverInterface } from "@pkcprotocol/pkc-js";
 import { createPublicClient, http, webSocket, type PublicClient } from "viem";
-import { mainnet } from "viem/chains";
-import { normalize } from "viem/ens";
+import { sepolia } from "viem/chains";
+import { namehash, normalize } from "viem/ens";
 
 const log = Logger("bitsocial:bso-resolver");
+
+/** The BSIP-13 `.bso` registry every resolver reads from. A protocol-level
+ *  constant, not configurable: all clients must read the same contract.
+ *
+ *  TODO(before merge): this is the Sepolia test deployment. Switch `chain`,
+ *  `address` and `deploymentBlock` to the mainnet registry once it is deployed. */
+export const BSO_REGISTRY = {
+  chain: sepolia,
+  address: "0x0E1d1c4Df4221335b7E906c587f5025265De2042",
+  /** Block the registry was deployed at. A `blockNumber` below this reads a
+   *  chain state where the registry does not exist yet, so the resolve throws. */
+  deploymentBlock: 12_202_947n,
+} as const;
+
+const BSO_TXT_RECORD_KEY = "bitsocial";
+
+const registryTextAbi = [
+  {
+    name: "text",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "key", type: "string" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const;
 
 export interface CanResolveBsoArgs {
   name: string;
@@ -48,13 +76,8 @@ export interface ResolverRuntime {
   ): PublicClient;
 }
 
-export function isBsoAliasDomain(address: string): boolean {
-  const lower = address.toLowerCase();
-  return lower.endsWith(".eth") || lower.endsWith(".bso");
-}
-
-export function normalizeBsoAliasDomain(address: string): string {
-  return address.endsWith(".bso") ? address.slice(0, -4) + ".eth" : address;
+export function isBsoName(name: string): boolean {
+  return name.toLowerCase().endsWith(".bso");
 }
 
 function createAbortError(): Error {
@@ -176,32 +199,45 @@ async function resolveWithClient({
 }): Promise<BsoResolveResult | undefined> {
   const resolvedName = name.includes(".") ? name : `${name}.bso`;
 
-  if (!isBsoAliasDomain(resolvedName)) {
-    throw new Error(`Unsupported TLD in "${name}". Only .bso and .eth domains are supported.`);
+  if (!isBsoName(resolvedName)) {
+    throw new Error(`Unsupported TLD in "${name}". Only .bso names are supported.`);
   }
 
-  const ethName = normalizeBsoAliasDomain(resolvedName);
-  const normalized = normalize(ethName);
+  // The node is the namehash of the normalized name with the .bso suffix kept.
+  const normalized = normalize(resolvedName);
+  const node = namehash(normalized);
 
   try {
-    const result = await client.getEnsText({
-      name: normalized,
-      key: "bitsocial",
+    const record = await client.readContract({
+      address: BSO_REGISTRY.address,
+      abi: registryTextAbi,
+      functionName: "text",
+      args: [node, BSO_TXT_RECORD_KEY],
       ...(blockNumber !== undefined ? { blockNumber } : {}),
     });
 
-    if (result == null) {
+    // The registry returns an empty string for names with no record, which
+    // covers unregistered, expired and grace-period names.
+    if (!record) {
       return undefined;
     }
 
-    return parseBitsocialTxtRecord(result);
+    return parseBitsocialTxtRecord(record);
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
     }
 
     if (error instanceof Error) {
-      (error as any).details = { name, resolvedName, ethName, normalized, blockNumber, chain: "mainnet" };
+      (error as any).details = {
+        name,
+        resolvedName,
+        normalized,
+        node,
+        blockNumber,
+        chain: BSO_REGISTRY.chain.name,
+        registryAddress: BSO_REGISTRY.address,
+      };
     }
     throw error;
   }
@@ -223,7 +259,7 @@ class ResolverRuntimeImpl implements ResolverRuntime {
     }
 
     return createPublicClient({
-      chain: mainnet,
+      chain: BSO_REGISTRY.chain,
       transport,
       ...(batch === false
         ? {}
@@ -237,7 +273,7 @@ export function createResolverRuntime(): ResolverRuntime {
 }
 
 export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
-  return isBsoAliasDomain(name);
+  return isBsoName(name);
 }
 
 export abstract class BaseBsoResolver implements NameResolverInterface {

@@ -1,6 +1,8 @@
 # @bitsocial/bso-resolver
 
-Resolve `.bso` domain names via `bitsocial` TXT records.
+Resolve `.bso` names to their `bitsocial` TXT records from the [BSIP-13](https://bsips.bitsocial.net/bsip-13#resolving-bso-names) registry.
+
+> **Pre-release:** the registry is not on Ethereum mainnet yet, so this branch reads the Sepolia test deployment at [`0x0E1d1c4Df4221335b7E906c587f5025265De2042`](https://sepolia.etherscan.io/address/0x0E1d1c4Df4221335b7E906c587f5025265De2042#code) and needs a Sepolia RPC as `provider`. The examples below are written for mainnet, which is what the released package will use.
 
 ## Install
 
@@ -68,7 +70,7 @@ const record2 = await resolver.resolve({
 });
 
 // Optional: pin resolution to a historical block for deterministic reads
-// (must be >= 23085558, the block where the ENS universal resolver was deployed)
+// (must be at or after the block the registry was deployed at, see resolve() below)
 const record3 = await resolver.resolve({
   name: "example.bso",
   blockNumber: 23500000n,
@@ -81,7 +83,7 @@ await resolver2.destroy();
 
 ## Recommended chain providers
 
-The following free public mainnet RPCs have been verified to resolve `.bso` names reliably (verified 2026-04-19):
+The following free public mainnet RPCs are the recommended defaults. They will be re-verified against the registry once it is deployed on mainnet, and the verification date recorded here:
 
 - `https://eth.drpc.org`
 - `https://ethereum.publicnode.com`
@@ -111,15 +113,15 @@ const resolver = new BsoResolver({
 
 #### `resolver.resolve({ name, blockNumber?, abortSignal? }): Promise<BsoResolveResult | undefined>`
 
-Resolves a `.bso` name by looking up the `bitsocial` TXT record.
+Resolves a `.bso` name by reading its `bitsocial` TXT record from the BSIP-13 registry: the name is normalized, hashed with the `.bso` suffix kept (`node = namehash(name)`), and looked up with the registry's `text(node, "bitsocial")`. A name without a TLD is treated as `.bso`; any other TLD throws.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
-- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be `>= 23085558` — viem resolves through the ENS universal resolver, which was deployed at that block, and throws `ChainDoesNotSupportContract` for older blocks.
+- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be at or after the registry's deployment block (`12202947` for the Sepolia test deployment; the mainnet block will be listed here once the registry is deployed). An older block reads a chain state where the registry does not exist, so the resolve throws instead of returning `undefined`. The provider must also keep state for that block: many free RPCs only serve recent blocks.
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns a [`BsoResolveResult`](#return-type-bsoresolveresult), or `undefined` if not found.
 
-`undefined` specifically means the lookup completed successfully but no `bitsocial` TXT record exists for `name` — either the name itself does not exist, or it exists but has no `bitsocial` text record set. Network/RPC failures and malformed TXT records throw rather than return `undefined`, so callers that need to distinguish "not found" from "lookup failed" should both `try/catch` and check for `result === undefined`.
+`undefined` specifically means the lookup completed successfully but no `bitsocial` TXT record exists for `name` — the name is unregistered, expired or in its grace period, or it is registered but has no `bitsocial` text record set. Network/RPC failures and malformed TXT records throw rather than return `undefined`, so callers that need to distinguish "not found" from "lookup failed" should both `try/catch` and check for `result === undefined`.
 
 TXT value format: `<ipnsPublicKey>[;key=value;other=value]` -> `{ publicKey, key, other }`
 
@@ -171,7 +173,7 @@ new BsoResolver({ key, provider, batch: false });
 Notes:
 
 - Resolves pinned to a `blockNumber` only batch with other resolves at the same block; resolves at different blocks are never merged.
-- Each call in the batch is independent (`allowFailure: true`) — one failing name does not poison the batch, and CCIP-read (offchain) names keep working.
+- Each call in the batch is independent (`allowFailure: true`) — one failing name does not poison the batch.
 - If the batched RPC call itself fails, all names in that batch fail together; callers like `pkc-js` fall back to the next provider per name, where they re-batch.
 
 ## Caching
@@ -191,6 +193,14 @@ Install the Playwright browser binaries used by the browser suite with:
 ```bash
 npm run test:browser:install
 ```
+
+Run the live suite, which reads the deployed registry through public RPC endpoints, with:
+
+```bash
+npm run test:live
+```
+
+It is separate from `npm test` because it depends on the network; CI runs it as its own job.
 
 Run the browser suite on Playwright's Chromium and Firefox engines with:
 

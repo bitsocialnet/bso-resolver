@@ -3,41 +3,46 @@ import type { Mock } from "vitest";
 
 vi.mock("viem", () => ({
   createPublicClient: vi.fn(() => ({
-    getEnsText: vi.fn(),
+    readContract: vi.fn(),
   })),
   http: vi.fn(() => "mock-http-transport"),
   webSocket: vi.fn(() => "mock-ws-transport"),
 }));
 
-vi.mock("viem/chains", () => ({
-  mainnet: { id: 1, name: "mainnet" },
-}));
-
-vi.mock("viem/ens", () => ({
-  normalize: (name: string) => name.toLowerCase(),
-}));
-
 import { createPublicClient, http, webSocket } from "viem";
+import { namehash } from "viem/ens";
 import { BsoResolver } from "@bitsocial/bso-resolver";
+import { BSO_REGISTRY } from "../../src/runtime/shared/resolver.js";
 
 const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
 
-function getMockGetEnsText(): Mock {
+// The exact registry read the resolver must make for an already-normalized name.
+function textCall(name: string, blockNumber?: bigint) {
+  return {
+    address: BSO_REGISTRY.address,
+    abi: expect.any(Array),
+    functionName: "text",
+    args: [namehash(name), "bitsocial"],
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
+  };
+}
+
+function getMockReadContract(): Mock {
   const client = (createPublicClient as Mock).mock.results.at(-1)?.value;
-  return client.getEnsText;
+  return client.readContract;
 }
 
 describe("BsoResolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn(),
+      readContract: vi.fn(),
     }));
   });
 
   it('resolves .bso name with provider="viem"', async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -45,34 +50,28 @@ describe("BsoResolver", () => {
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
-    expect(getMockGetEnsText()).toHaveBeenCalledWith({
-      name: "example.eth",
-      key: "bitsocial",
-    });
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("example.bso"));
 
     await resolver.destroy();
   });
 
-  it("resolves .bso name by normalizing to .eth first", async () => {
+  it("hashes the normalized name with the .bso suffix kept", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(getMockGetEnsText()).toHaveBeenCalledWith({
-      name: "example.eth",
-      key: "bitsocial",
-    });
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("example.bso"));
 
     await resolver.destroy();
   });
 
   it("returns undefined when TXT record not found", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(null),
+      readContract: vi.fn().mockResolvedValue(""),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -85,7 +84,7 @@ describe("BsoResolver", () => {
 
   it("passes custom URL to http() transport", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
@@ -98,7 +97,7 @@ describe("BsoResolver", () => {
 
   it("uses webSocket() transport for wss:// provider URLs", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
@@ -112,7 +111,7 @@ describe("BsoResolver", () => {
 
   it("uses webSocket() transport for ws:// provider URLs", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "ws://rpc.example.com" });
@@ -126,24 +125,21 @@ describe("BsoResolver", () => {
 
   it("defaults to .bso when name has no TLD", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(getMockGetEnsText()).toHaveBeenCalledWith({
-      name: "example.eth",
-      key: "bitsocial",
-    });
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("example.bso"));
 
     await resolver.destroy();
   });
 
   it("parses TXT record metadata fields", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi
+      readContract: vi
         .fn()
         .mockResolvedValue(
           `${VALID_PUBLIC_KEY};name=memes.bso;network=mainnet;owner=bitsocial`
@@ -165,7 +161,7 @@ describe("BsoResolver", () => {
 
   it("uses last value when metadata keys are duplicated", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi
+      readContract: vi
         .fn()
         .mockResolvedValue(`${VALID_PUBLIC_KEY};network=mainnet;network=testnet`),
     }));
@@ -183,7 +179,7 @@ describe("BsoResolver", () => {
 
   it("throws for malformed metadata segments", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(`${VALID_PUBLIC_KEY};bad-segment`),
+      readContract: vi.fn().mockResolvedValue(`${VALID_PUBLIC_KEY};bad-segment`),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -197,7 +193,7 @@ describe("BsoResolver", () => {
 
   it('throws when metadata includes "publicKey" key', async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi
+      readContract: vi
         .fn()
         .mockResolvedValue(`${VALID_PUBLIC_KEY};publicKey=12D3KooWWrongValue`),
     }));
@@ -213,7 +209,7 @@ describe("BsoResolver", () => {
 
   it("throws when first TXT segment is not a valid IPNS public key", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue("not-a-valid-public-key;network=mainnet"),
+      readContract: vi.fn().mockResolvedValue("not-a-valid-public-key;network=mainnet"),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -232,49 +228,111 @@ describe("BsoResolver", () => {
 
     await expect(
       resolver.resolve({ name: "example.com" })
-    ).rejects.toThrow('Unsupported TLD in "example.com". Only .bso and .eth domains are supported.');
+    ).rejects.toThrow('Unsupported TLD in "example.com". Only .bso names are supported.');
 
     await resolver.destroy();
   });
 
-  it("forwards blockNumber to getEnsText when provided", async () => {
+  it("throws for .eth names without touching the chain", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({ name: "example.eth" })
+    ).rejects.toThrow('Unsupported TLD in "example.eth". Only .bso names are supported.');
+    expect(getMockReadContract()).not.toHaveBeenCalled();
+    expect(resolver.canResolve({ name: "example.eth" })).toBe(false);
+
+    await resolver.destroy();
+  });
+
+  it("normalizes mixed-case names to the same node", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "MeMeS.BSO" });
+
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("memes.bso"));
+    expect(getMockReadContract().mock.calls[0][0].args[0]).toBe(
+      "0x32766e8bc53e343c21d132d673d112b27f0e1aa11965199b934d29721837a941"
+    );
+
+    await resolver.destroy();
+  });
+
+  it("hashes every label of a subdomain", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "blog.bitsocial.bso" });
+
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("blog.bitsocial.bso"));
+    expect(namehash("blog.bitsocial.bso")).not.toBe(namehash("bitsocial.bso"));
+
+    await resolver.destroy();
+  });
+
+  it("hashes non-ASCII names", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      readContract: vi.fn().mockResolvedValue(""),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    const result = await resolver.resolve({ name: "日本語.bso" });
+
+    expect(result).toBeUndefined();
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("日本語.bso"));
+
+    await resolver.destroy();
+  });
+
+  it("creates the client on the registry's chain", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.resolve({ name: "example.bso" });
+
+    expect((createPublicClient as Mock).mock.calls.at(-1)?.[0].chain).toBe(BSO_REGISTRY.chain);
+
+    await resolver.destroy();
+  });
+
+  it("forwards blockNumber to readContract when provided", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     const result = await resolver.resolve({ name: "example.bso", blockNumber: 23500000n });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(getMockGetEnsText()).toHaveBeenCalledWith({
-      name: "example.eth",
-      key: "bitsocial",
-      blockNumber: 23500000n,
-    });
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("example.bso", 23500000n));
 
     await resolver.destroy();
   });
 
   it("resolves at head (blockNumber undefined) when omitted", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     await resolver.resolve({ name: "example.bso" });
 
-    expect(getMockGetEnsText()).toHaveBeenCalledWith({
-      name: "example.eth",
-      key: "bitsocial",
-    });
-    expect(getMockGetEnsText().mock.calls[0][0]).not.toHaveProperty("blockNumber");
+    expect(getMockReadContract()).toHaveBeenCalledWith(textCall("example.bso"));
+    expect(getMockReadContract().mock.calls[0][0]).not.toHaveProperty("blockNumber");
 
     await resolver.destroy();
   });
 
   it("enables multicall batching by default", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -291,7 +349,7 @@ describe("BsoResolver", () => {
 
   it("merges custom batch options with defaults", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({
@@ -312,7 +370,7 @@ describe("BsoResolver", () => {
 
   it("disables batching with batch: false", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({
@@ -329,7 +387,7 @@ describe("BsoResolver", () => {
 
   it("propagates errors from viem with details", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockRejectedValue(new Error("RPC error")),
+      readContract: vi.fn().mockRejectedValue(new Error("RPC error")),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -343,9 +401,10 @@ describe("BsoResolver", () => {
         name: "example.bso",
         resolvedName: "example.bso",
         provider: "viem",
-        ethName: "example.eth",
-        normalized: "example.eth",
-        chain: "mainnet",
+        normalized: "example.bso",
+        node: namehash("example.bso"),
+        chain: BSO_REGISTRY.chain.name,
+        registryAddress: BSO_REGISTRY.address,
       });
     }
 
@@ -357,13 +416,13 @@ describe("BsoResolver abort and destroy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn(),
+      readContract: vi.fn(),
     }));
   });
 
   it("rejects immediately with AbortError for pre-aborted signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const controller = new AbortController();
@@ -383,7 +442,7 @@ describe("BsoResolver abort and destroy", () => {
 
   it("rejects with AbortError when aborted during in-flight resolution", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn(
+      readContract: vi.fn(
         () =>
           new Promise(() => {
             // Intentionally unresolved to simulate a long-running request.
@@ -408,7 +467,7 @@ describe("BsoResolver abort and destroy", () => {
 
   it("destroy() rejects all in-flight resolves with AbortError", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn(
+      readContract: vi.fn(
         () =>
           new Promise(() => {
             // Intentionally unresolved to simulate a long-running request.
@@ -432,7 +491,7 @@ describe("BsoResolver abort and destroy", () => {
     const mockRpcClient = { close: mockClose };
 
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
       transport: {
         type: "webSocket",
         getRpcClient: vi.fn().mockResolvedValue(mockRpcClient),
@@ -449,7 +508,7 @@ describe("BsoResolver abort and destroy", () => {
 
   it("destroy() swallows getRpcClient() rejection and still completes", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
       transport: {
         type: "webSocket",
         getRpcClient: vi.fn().mockRejectedValue(new Error("WebSocket already closed")),
@@ -468,7 +527,7 @@ describe("BsoResolver abort and destroy", () => {
 
   it("destroy() swallows WebSocket close() throws and still completes", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
       transport: {
         type: "webSocket",
         getRpcClient: vi.fn().mockResolvedValue({
@@ -489,7 +548,7 @@ describe("BsoResolver abort and destroy", () => {
 
   it("passes destroy signal to http() transport fetchOptions", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -511,7 +570,7 @@ describe("BsoResolver lifecycle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      readContract: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
   });
 
