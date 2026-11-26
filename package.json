@@ -53,7 +53,7 @@
   "devDependencies": {
     "@commitlint/cli": "20.4.3",
     "@commitlint/config-conventional": "20.4.3",
-    "@pkcprotocol/pkc-js": "0.0.22",
+    "@pkcprotocol/pkc-js": "0.0.163",
     "@release-it/conventional-changelog": "10.0.5",
     "@vitest/browser-playwright": "4.1.12",
     "commitizen": "4.3.2",
@@ -72,7 +72,6 @@
   },
   "overrides": {
     "@pkcprotocol/pkc-js": {
-      "@libp2p/gossipsub": "16.0.5",
       "probe-image-size": "7.4.0",
       "uuid@13": "13.0.1"
     },
