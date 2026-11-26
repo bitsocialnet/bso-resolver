@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.12](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.11...v0.0.12) (2026-11-26)
+
+### Bug Fixes
+
+* **deps:** upgrade @pkcprotocol/pkc-js 0.0.22 -> 0.0.163 ([#16](https://github.com/bitsocialnet/bso-resolver/issues/16)) ([bacb3f2](https://github.com/bitsocialnet/bso-resolver/commit/bacb3f2137d30b54a30bbac7539563056fce212a))
+
 ## [0.0.11](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.10...v0.0.11) (2026-10-18)
 
 ## [0.0.10](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.9...v0.0.10) (2026-07-14)
