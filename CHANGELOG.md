@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.0](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.12...v0.1.0) (2026-11-27)
+
+### ⚠ BREAKING CHANGES
+
+* **logger:** resolve() and destroy() require a `log` (a pkc-logger Logger). Use @pkcprotocol/pkc-js 0.0.165 or newer; standalone callers pass Logger({ namespace }) from @pkcprotocol/pkc-logger. `error.details.provider` is now the provider's host, not its full URL.
+
+### Features
+
+* **logger:** log only through the log pkc-js passes ([#18](https://github.com/bitsocialnet/bso-resolver/issues/18)), closes [pkcprotocol/pkc-js#626](https://github.com/pkcprotocol/pkc-js/issues/626) [#10](https://github.com/bitsocialnet/bso-resolver/issues/10)
+
 ## [0.0.12](https://github.com/bitsocialnet/bso-resolver/compare/v0.0.11...v0.0.12) (2026-11-26)
 
 ### Bug Fixes
