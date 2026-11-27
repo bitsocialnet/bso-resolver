@@ -14,16 +14,21 @@ export function providerHost(provider: string): string {
   }
 }
 
-/** Error summary for logs. A viem error's `message` embeds the request URL
- *  (and with it any API key); its `shortMessage` does not. Errors without a
- *  `shortMessage` are this package's own (TXT record validation, abort) and
- *  carry no URL. */
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
+
+/** Error summary for logs. Prefers viem's `shortMessage` (its `message` embeds
+ *  the request URL), and reduces any URL left in the text to its host, since
+ *  other errors (native fetch, WebSocket) may embed a URL that carries an API
+ *  key. */
 function errorSummary(error: unknown): string {
+  let text: string;
   if (error instanceof Error) {
     const shortMessage = (error as { shortMessage?: unknown }).shortMessage;
-    return typeof shortMessage === "string" ? shortMessage : error.message;
+    text = typeof shortMessage === "string" ? shortMessage : error.message;
+  } else {
+    text = String(error);
   }
-  return String(error);
+  return text.replace(URL_IN_TEXT, (url) => providerHost(url));
 }
 
 function assertLog(log: unknown, method: string): asserts log is Logger {

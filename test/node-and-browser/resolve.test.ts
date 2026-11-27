@@ -679,6 +679,65 @@ describe("BsoResolver logging through the passed log", () => {
     }
   });
 
+  it("reduces URLs in non-viem error messages to their host", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockRejectedValue(new Error(`WebSocket connection to '${KEYED_WS}' failed`)),
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: KEYED_WS });
+
+    await expect(resolver.resolve({ log, name: "example.bso" })).rejects.toThrow();
+
+    expect(loggedText(log.trace)).toContain("WebSocket connection to 'mainnet.infura.io' failed");
+    for (const secret of SECRETS) {
+      expect(loggedText(log.trace)).not.toContain(secret);
+    }
+    await resolver.destroy({ log });
+  });
+
+  it("redacts an unparseable URL in a WebSocket constructor error on close", async () => {
+    const badPort = "wss://rpc.example.com:bad/v3/SECRET_API_KEY";
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        // Chromium's message when `new WebSocket(url)` gets an invalid URL
+        getRpcClient: vi
+          .fn()
+          .mockRejectedValue(
+            new SyntaxError(`Failed to construct 'WebSocket': The URL '${badPort}' is invalid.`)
+          ),
+      },
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: badPort });
+    await resolver.resolve({ log, name: "example.bso" });
+
+    await resolver.destroy({ log });
+
+    expect(loggedText(log.error)).toContain("The URL '<invalid provider url>' is invalid.");
+    expect(loggedText(log.error)).not.toContain("SECRET_API_KEY");
+  });
+
+  it("reduces URLs in a failed WebSocket close message to their host", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockRejectedValue(new Error(`socket ${KEYED_WS} already closed`)),
+      },
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: KEYED_WS });
+    await resolver.resolve({ log, name: "example.bso" });
+
+    await resolver.destroy({ log });
+
+    expect(loggedText(log.error)).toContain("socket mainnet.infura.io already closed");
+    for (const secret of SECRETS) {
+      expect(loggedText(log.error)).not.toContain(secret);
+    }
+  });
+
   it("logs an unparseable provider as a placeholder", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockRejectedValue(new Error("boom")),
