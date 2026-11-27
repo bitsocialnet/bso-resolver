@@ -15,5 +15,5 @@ jobs:
         with: { node-version: 22, cache: 'npm' }
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
       - run: npm test

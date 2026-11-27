@@ -19,6 +19,12 @@ vi.mock("viem/ens", () => ({
 
 import { createPublicClient, http, webSocket } from "viem";
 import { BsoResolver } from "@bitsocial/bso-resolver";
+import { createTestLog, type TestLog } from "../test-log.js";
+
+let log: TestLog;
+beforeEach(() => {
+  log = createTestLog();
+});
 
 const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
 
@@ -41,7 +47,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso" });
+    const result = await resolver.resolve({ log, name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
@@ -50,7 +56,7 @@ describe("BsoResolver", () => {
       key: "bitsocial",
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("resolves .bso name by normalizing to .eth first", async () => {
@@ -59,7 +65,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso" });
+    const result = await resolver.resolve({ log, name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
@@ -67,7 +73,7 @@ describe("BsoResolver", () => {
       key: "bitsocial",
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("returns undefined when TXT record not found", async () => {
@@ -76,11 +82,11 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "unknown.bso" });
+    const result = await resolver.resolve({ log, name: "unknown.bso" });
 
     expect(result).toBeUndefined();
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("passes custom URL to http() transport", async () => {
@@ -89,11 +95,11 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchOptions: { signal: expect.any(AbortSignal) } });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("uses webSocket() transport for wss:// provider URLs", async () => {
@@ -102,12 +108,12 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(webSocket).toHaveBeenCalledWith("wss://rpc.example.com", { reconnect: false });
     expect(http).not.toHaveBeenCalled();
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("uses webSocket() transport for ws:// provider URLs", async () => {
@@ -116,12 +122,12 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "ws://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(webSocket).toHaveBeenCalledWith("ws://rpc.example.com", { reconnect: false });
     expect(http).not.toHaveBeenCalled();
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("defaults to .bso when name has no TLD", async () => {
@@ -130,7 +136,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example" });
+    const result = await resolver.resolve({ log, name: "example" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
@@ -138,7 +144,7 @@ describe("BsoResolver", () => {
       key: "bitsocial",
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("parses TXT record metadata fields", async () => {
@@ -151,7 +157,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso" });
+    const result = await resolver.resolve({ log, name: "example.bso" });
 
     expect(result).toEqual({
       publicKey: VALID_PUBLIC_KEY,
@@ -160,7 +166,7 @@ describe("BsoResolver", () => {
       owner: "bitsocial",
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("uses last value when metadata keys are duplicated", async () => {
@@ -171,14 +177,14 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso" });
+    const result = await resolver.resolve({ log, name: "example.bso" });
 
     expect(result).toEqual({
       publicKey: VALID_PUBLIC_KEY,
       network: "testnet",
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("throws for malformed metadata segments", async () => {
@@ -189,10 +195,10 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow('Invalid bitsocial TXT record: expected "key=value" segment');
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it('throws when metadata includes "publicKey" key', async () => {
@@ -205,10 +211,10 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow('Invalid bitsocial TXT record: "publicKey" suffix key is not allowed.');
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("throws when first TXT segment is not a valid IPNS public key", async () => {
@@ -219,22 +225,22 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow(
       "Invalid bitsocial TXT record: expected a valid IPNS public key as the first segment."
     );
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("throws for unsupported TLDs", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     await expect(
-      resolver.resolve({ name: "example.com" })
+      resolver.resolve({ log, name: "example.com" })
     ).rejects.toThrow('Unsupported TLD in "example.com". Only .bso and .eth domains are supported.');
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("forwards blockNumber to getEnsText when provided", async () => {
@@ -243,7 +249,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    const result = await resolver.resolve({ name: "example.bso", blockNumber: 23500000n });
+    const result = await resolver.resolve({ log, name: "example.bso", blockNumber: 23500000n });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
@@ -252,7 +258,7 @@ describe("BsoResolver", () => {
       blockNumber: 23500000n,
     });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("resolves at head (blockNumber undefined) when omitted", async () => {
@@ -261,7 +267,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
@@ -269,7 +275,7 @@ describe("BsoResolver", () => {
     });
     expect(getMockGetEnsText().mock.calls[0][0]).not.toHaveProperty("blockNumber");
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("enables multicall batching by default", async () => {
@@ -278,7 +284,7 @@ describe("BsoResolver", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(createPublicClient).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -286,7 +292,7 @@ describe("BsoResolver", () => {
       })
     );
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("merges custom batch options with defaults", async () => {
@@ -299,7 +305,7 @@ describe("BsoResolver", () => {
       provider: "viem",
       batch: { wait: 0 },
     });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect(createPublicClient).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -307,7 +313,7 @@ describe("BsoResolver", () => {
       })
     );
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("disables batching with batch: false", async () => {
@@ -320,11 +326,11 @@ describe("BsoResolver", () => {
       provider: "viem",
       batch: false,
     });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     expect((createPublicClient as Mock).mock.calls[0][0]).not.toHaveProperty("batch");
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("propagates errors from viem with details", async () => {
@@ -335,7 +341,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     try {
-      await resolver.resolve({ name: "example.bso" });
+      await resolver.resolve({ log, name: "example.bso" });
       expect.fail("should have thrown");
     } catch (error: any) {
       expect(error.message).toBe("RPC error");
@@ -349,7 +355,7 @@ describe("BsoResolver", () => {
       });
     }
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 });
 
@@ -373,12 +379,13 @@ describe("BsoResolver abort and destroy", () => {
 
     await expect(
       resolver.resolve({
+        log,
         name: "example.bso",
         abortSignal: controller.signal,
       })
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("rejects with AbortError when aborted during in-flight resolution", async () => {
@@ -395,6 +402,7 @@ describe("BsoResolver abort and destroy", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
     const pending = resolver.resolve({
+      log,
       name: "example.bso",
       abortSignal: controller.signal,
     });
@@ -403,7 +411,7 @@ describe("BsoResolver abort and destroy", () => {
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("destroy() rejects all in-flight resolves with AbortError", async () => {
@@ -418,10 +426,10 @@ describe("BsoResolver abort and destroy", () => {
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
 
-    const pending1 = resolver.resolve({ name: "a.bso" });
-    const pending2 = resolver.resolve({ name: "b.bso" });
+    const pending1 = resolver.resolve({ log, name: "a.bso" });
+    const pending2 = resolver.resolve({ log, name: "b.bso" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
 
     await expect(pending1).rejects.toMatchObject({ name: "AbortError" });
     await expect(pending2).rejects.toMatchObject({ name: "AbortError" });
@@ -440,9 +448,9 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
 
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
@@ -457,12 +465,12 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow("Cannot resolve after destroy() has been called.");
   });
 
@@ -478,12 +486,12 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow("Cannot resolve after destroy() has been called.");
   });
 
@@ -493,7 +501,7 @@ describe("BsoResolver abort and destroy", () => {
     }));
 
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.bso" });
+    await resolver.resolve({ log, name: "example.bso" });
 
     // Capture the signal passed to http()
     const httpCall = (http as Mock).mock.calls[0];
@@ -501,7 +509,7 @@ describe("BsoResolver abort and destroy", () => {
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(signal.aborted).toBe(false);
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
 
     expect(signal.aborted).toBe(true);
   });
@@ -521,24 +529,24 @@ describe("BsoResolver lifecycle", () => {
 
   it("throws after destroy() is called", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.bso" });
-    await resolver.destroy();
+    await resolver.resolve({ log, name: "example.bso" });
+    await resolver.destroy({ log });
 
     await expect(
-      resolver.resolve({ name: "example.bso" })
+      resolver.resolve({ log, name: "example.bso" })
     ).rejects.toThrow("Cannot resolve after destroy() has been called.");
   });
 
   it("destroy() is idempotent", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.resolve({ name: "example.bso" });
-    await resolver.destroy();
-    await resolver.destroy(); // should not throw
+    await resolver.resolve({ log, name: "example.bso" });
+    await resolver.destroy({ log });
+    await resolver.destroy({ log }); // should not throw
   });
 
   it("destroy() is a no-op if resolve() was never called", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
-    await resolver.destroy(); // should not throw
+    await resolver.destroy({ log }); // should not throw
   });
 
   it("canResolve works without initialization", () => {
@@ -564,12 +572,203 @@ describe("BsoResolver lifecycle", () => {
     const r1 = new BsoResolver({ key: "r1", provider: "viem" });
     const r2 = new BsoResolver({ key: "r2", provider: "viem" });
 
-    await r1.resolve({ name: "a.bso" });
-    await r2.resolve({ name: "b.bso" });
+    await r1.resolve({ log, name: "a.bso" });
+    await r2.resolve({ log, name: "b.bso" });
 
     expect(createPublicClient).toHaveBeenCalledTimes(2);
 
-    await r1.destroy();
-    await r2.destroy();
+    await r1.destroy({ log });
+    await r2.destroy({ log });
+  });
+});
+
+describe("BsoResolver logging through the passed log", () => {
+  const KEYED_HTTP = "https://mainnet.infura.io/v3/SECRET_API_KEY?apikey=SECRET_QUERY";
+  const KEYED_WS = "wss://user:SECRET_PASSWORD@mainnet.infura.io/ws/v3/SECRET_API_KEY";
+  const SECRETS = ["SECRET_API_KEY", "SECRET_QUERY", "SECRET_PASSWORD", "/v3/"];
+
+  function viemLikeError(url: string): Error {
+    // viem's `message` embeds the request URL; `shortMessage` does not.
+    return Object.assign(new Error(`HTTP request failed.\n\nURL: ${url}`), {
+      shortMessage: "HTTP request failed.",
+    });
+  }
+
+  function loggedText(spy: Mock): string {
+    return JSON.stringify(spy.mock.calls);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("logs a failed resolve to the passed log.trace", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockRejectedValue(viemLikeError(KEYED_HTTP)),
+    }));
+    const resolver = new BsoResolver({ key: "bso-infura", provider: KEYED_HTTP });
+
+    await expect(resolver.resolve({ log, name: "example.bso" })).rejects.toThrow();
+
+    expect(log.trace).toHaveBeenCalledTimes(1);
+    expect(loggedText(log.trace)).toContain("example.bso");
+    expect(loggedText(log.trace)).toContain("mainnet.infura.io");
+    expect(loggedText(log.trace)).toContain("HTTP request failed.");
+    await resolver.destroy({ log });
+  });
+
+  it("logs the message of errors that are not from viem", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue("not-a-valid-public-key"),
+    }));
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(resolver.resolve({ log, name: "example.bso" })).rejects.toThrow();
+
+    expect(loggedText(log.trace)).toContain("Invalid bitsocial TXT record");
+    await resolver.destroy({ log });
+  });
+
+  it("does not log on a successful resolve", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+    }));
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await resolver.resolve({ log, name: "example.bso" });
+
+    expect(log.trace).not.toHaveBeenCalled();
+    expect(log.error).not.toHaveBeenCalled();
+    await resolver.destroy({ log });
+  });
+
+  it("logs only the provider host, never the key in its path, query or userinfo", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockRejectedValue(viemLikeError(KEYED_HTTP)),
+    }));
+    const resolver = new BsoResolver({ key: "bso-infura", provider: KEYED_HTTP });
+
+    const error: any = await resolver.resolve({ log, name: "example.bso" }).catch((e) => e);
+
+    for (const secret of SECRETS) {
+      expect(loggedText(log.trace)).not.toContain(secret);
+    }
+    expect(error.details.provider).toBe("mainnet.infura.io");
+    await resolver.destroy({ log });
+  });
+
+  it("logs a failed WebSocket close to the log passed to destroy()", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockRejectedValue(viemLikeError(KEYED_WS)),
+      },
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: KEYED_WS });
+    const resolveLog = createTestLog();
+    await resolver.resolve({ log: resolveLog, name: "example.bso" });
+
+    await resolver.destroy({ log });
+
+    expect(log.error).toHaveBeenCalledTimes(1);
+    expect(resolveLog.error).not.toHaveBeenCalled();
+    expect(loggedText(log.error)).toContain("mainnet.infura.io");
+    for (const secret of SECRETS) {
+      expect(loggedText(log.error)).not.toContain(secret);
+    }
+  });
+
+  it("reduces URLs in non-viem error messages to their host", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi
+        .fn()
+        .mockRejectedValue(new Error(`WebSocket connection to '${KEYED_WS}' failed`)),
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: KEYED_WS });
+
+    await expect(resolver.resolve({ log, name: "example.bso" })).rejects.toThrow();
+
+    expect(loggedText(log.trace)).toContain("WebSocket connection to 'mainnet.infura.io' failed");
+    for (const secret of SECRETS) {
+      expect(loggedText(log.trace)).not.toContain(secret);
+    }
+    await resolver.destroy({ log });
+  });
+
+  it("redacts an unparseable URL in a WebSocket constructor error on close", async () => {
+    const badPort = "wss://rpc.example.com:bad/v3/SECRET_API_KEY";
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        // Chromium's message when `new WebSocket(url)` gets an invalid URL
+        getRpcClient: vi
+          .fn()
+          .mockRejectedValue(
+            new SyntaxError(`Failed to construct 'WebSocket': The URL '${badPort}' is invalid.`)
+          ),
+      },
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: badPort });
+    await resolver.resolve({ log, name: "example.bso" });
+
+    await resolver.destroy({ log });
+
+    expect(loggedText(log.error)).toContain("The URL '<invalid provider url>' is invalid.");
+    expect(loggedText(log.error)).not.toContain("SECRET_API_KEY");
+  });
+
+  it("reduces URLs in a failed WebSocket close message to their host", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
+      transport: {
+        type: "webSocket",
+        getRpcClient: vi.fn().mockRejectedValue(new Error(`socket ${KEYED_WS} already closed`)),
+      },
+    }));
+    const resolver = new BsoResolver({ key: "bso-ws", provider: KEYED_WS });
+    await resolver.resolve({ log, name: "example.bso" });
+
+    await resolver.destroy({ log });
+
+    expect(loggedText(log.error)).toContain("socket mainnet.infura.io already closed");
+    for (const secret of SECRETS) {
+      expect(loggedText(log.error)).not.toContain(secret);
+    }
+  });
+
+  it("logs an unparseable provider as a placeholder", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockRejectedValue(new Error("boom")),
+    }));
+    const resolver = new BsoResolver({ key: "bso-bad", provider: "not a url SECRET_API_KEY" });
+
+    const error: any = await resolver.resolve({ log, name: "example.bso" }).catch((e) => e);
+
+    expect(loggedText(log.trace)).toContain("<invalid provider url>");
+    expect(loggedText(log.trace)).not.toContain("SECRET_API_KEY");
+    expect(error.details.provider).toBe("<invalid provider url>");
+    await resolver.destroy({ log });
+  });
+
+  it("resolve() throws TypeError when log is missing", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({ name: "example.bso" } as any)
+    ).rejects.toThrow(new TypeError('resolve(): "log" is required'));
+    expect(createPublicClient).not.toHaveBeenCalled();
+  });
+
+  it("destroy() throws TypeError when log is missing", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect((resolver.destroy as any)()).rejects.toThrow(
+      new TypeError('destroy(): "log" is required')
+    );
+    await expect((resolver.destroy as any)({})).rejects.toThrow(
+      new TypeError('destroy(): "log" is required')
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import {
   decodeFunctionData,
   encodeFunctionResult,
@@ -6,6 +6,12 @@ import {
   type Hex,
 } from "viem";
 import { BsoResolver } from "@bitsocial/bso-resolver";
+import { createTestLog, type TestLog } from "../test-log.js";
+
+let log: TestLog;
+beforeEach(() => {
+  log = createTestLog();
+});
 
 // Uses the real viem client against a stubbed fetch to verify that concurrent
 // resolves are coalesced into a single Multicall3.aggregate3 eth_call.
@@ -122,9 +128,9 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     });
 
     const results = await Promise.all([
-      resolver.resolve({ name: "a.bso" }),
-      resolver.resolve({ name: "b.bso" }),
-      resolver.resolve({ name: "c.bso" }),
+      resolver.resolve({ log, name: "a.bso" }),
+      resolver.resolve({ log, name: "b.bso" }),
+      resolver.resolve({ log, name: "c.bso" }),
     ]);
 
     expect(results).toEqual([
@@ -135,7 +141,7 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     expect(captured).toHaveLength(1);
     expect(decodedBatchCallCount(captured[0])).toBe(3);
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   // Block numbers must be >= 23085558: viem's mainnet chain config marks the
@@ -152,8 +158,8 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     });
 
     const results = await Promise.all([
-      resolver.resolve({ name: "a.bso", blockNumber: HISTORICAL_BLOCK }),
-      resolver.resolve({ name: "b.bso", blockNumber: HISTORICAL_BLOCK }),
+      resolver.resolve({ log, name: "a.bso", blockNumber: HISTORICAL_BLOCK }),
+      resolver.resolve({ log, name: "b.bso", blockNumber: HISTORICAL_BLOCK }),
     ]);
 
     expect(results).toEqual([
@@ -164,7 +170,7 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     expect(decodedBatchCallCount(captured[0])).toBe(2);
     expect(captured[0].block).toBe(`0x${HISTORICAL_BLOCK.toString(16)}`);
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("does not merge resolves pinned to different blockNumbers", async () => {
@@ -176,14 +182,14 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     });
 
     await Promise.all([
-      resolver.resolve({ name: "a.bso", blockNumber: HISTORICAL_BLOCK }),
-      resolver.resolve({ name: "b.bso", blockNumber: HISTORICAL_BLOCK + 1n }),
+      resolver.resolve({ log, name: "a.bso", blockNumber: HISTORICAL_BLOCK }),
+      resolver.resolve({ log, name: "b.bso", blockNumber: HISTORICAL_BLOCK + 1n }),
     ]);
 
     expect(captured).toHaveLength(2);
     expect(new Set(captured.map((call) => call.block)).size).toBe(2);
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 
   it("sends individual eth_calls with batch: false", async () => {
@@ -195,9 +201,9 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     });
 
     const results = await Promise.all([
-      resolver.resolve({ name: "a.bso" }),
-      resolver.resolve({ name: "b.bso" }),
-      resolver.resolve({ name: "c.bso" }),
+      resolver.resolve({ log, name: "a.bso" }),
+      resolver.resolve({ log, name: "b.bso" }),
+      resolver.resolve({ log, name: "c.bso" }),
     ]);
 
     expect(results).toEqual([
@@ -210,6 +216,6 @@ describe("BsoResolver multicall batching (real viem client)", () => {
       expect(call.data.startsWith("0x82ad56cb")).toBe(false);
     }
 
-    await resolver.destroy();
+    await resolver.destroy({ log });
   });
 });
