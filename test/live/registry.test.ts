@@ -21,6 +21,9 @@ const ARCHIVE_PROVIDERS = ["https://sepolia.gateway.tenderly.co", "viem"];
 // A block after the seed list was written to the registry.
 const SEEDED_BLOCK = BSO_REGISTRY.deploymentBlock + 32n;
 
+// Per-provider budget. Three attempts fit inside the 60s test timeout.
+const ATTEMPT_TIMEOUT_MS = 15_000;
+
 async function withResolver<T>(
   run: (resolver: BsoResolver) => Promise<T>,
   providers: string[] = PROVIDERS
@@ -28,11 +31,16 @@ async function withResolver<T>(
   let lastError: unknown;
   for (const provider of providers) {
     const resolver = new BsoResolver({ key: `bso-live-${provider}`, provider });
+    // A provider that accepts the request and never answers would otherwise
+    // hold the test until it times out, so the next provider is never tried.
+    // destroy() rejects the pending resolve, which moves the loop on.
+    const deadline = setTimeout(() => void resolver.destroy(), ATTEMPT_TIMEOUT_MS);
     try {
       return await run(resolver);
     } catch (error) {
       lastError = error;
     } finally {
+      clearTimeout(deadline);
       await resolver.destroy();
     }
   }
@@ -70,7 +78,7 @@ describe(`BSIP-13 registry on ${BSO_REGISTRY.chain.name} (live)`, () => {
   it("resolves a name registered through commit-reveal after the seed", async () => {
     // bso-resolver-test.bso was registered for this suite at block 12222930 and
     // its record set at block 12222931. It is not on the seed list. The
-    // registration expires on 2027-11-27 unless renewed.
+    // registration was renewed once and expires on 2028-11-26.
     expect(await resolveLive("bso-resolver-test.bso")).toEqual({
       publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR",
     });
