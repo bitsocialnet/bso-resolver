@@ -5,33 +5,17 @@ import {
   multicall3Abi,
   type Hex,
 } from "viem";
+import { namehash } from "viem/ens";
 import { BsoResolver } from "@bitsocial/bso-resolver";
+import { BSO_REGISTRY } from "../../src/runtime/shared/resolver.js";
 
 // Uses the real viem client against a stubbed fetch to verify that concurrent
 // resolves are coalesced into a single Multicall3.aggregate3 eth_call.
 
 const VALID_PUBLIC_KEY = "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR";
-const RESOLVER_ADDRESS = "0x231b0ee14048e9dccd1d247744d114a4eb5e8e63";
+const AGGREGATE3_SELECTOR = "0x82ad56cb";
 
-// ENS universal resolver function used by viem's getEnsText (viem >= 2.23)
-const universalResolverResolveAbi = [
-  {
-    name: "resolveWithGateways",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "name", type: "bytes" },
-      { name: "data", type: "bytes" },
-      { name: "gateways", type: "string[]" },
-    ],
-    outputs: [
-      { name: "", type: "bytes" },
-      { name: "address", type: "address" },
-    ],
-  },
-] as const;
-
-const textResolverAbi = [
+const registryTextAbi = [
   {
     name: "text",
     type: "function",
@@ -44,28 +28,31 @@ const textResolverAbi = [
   },
 ] as const;
 
-function encodeUniversalResolverResult(txtValue: string): Hex {
-  const textResult = encodeFunctionResult({
-    abi: textResolverAbi,
-    functionName: "text",
-    result: txtValue,
-  });
-  return encodeFunctionResult({
-    abi: universalResolverResolveAbi,
-    functionName: "resolveWithGateways",
-    result: [textResult, RESOLVER_ADDRESS],
-  });
-}
-
 interface CapturedEthCall {
   to: Hex;
   data: Hex;
   block: string;
 }
 
-// Stubs global fetch with a JSON-RPC handler that answers both plain
-// universal-resolver eth_calls and Multicall3.aggregate3 batches.
-function stubRpc(): CapturedEthCall[] {
+// Answers a registry text(node, key) call. Records are keyed by node, and a
+// node without an entry reads as the empty string, like the real registry.
+function answerTextCall(data: Hex, records: Record<string, string>): Hex {
+  const decoded = decodeFunctionData({ abi: registryTextAbi, data });
+  const [node, key] = decoded.args;
+  expect(key).toBe("bitsocial");
+  return encodeFunctionResult({
+    abi: registryTextAbi,
+    functionName: "text",
+    result: records[node] ?? "",
+  });
+}
+
+// Stubs global fetch with a JSON-RPC handler that answers both plain registry
+// eth_calls and Multicall3.aggregate3 batches of them.
+function stubRpc(
+  records: Record<string, string>,
+  { failWith }: { failWith?: string } = {}
+): CapturedEthCall[] {
   const captured: CapturedEthCall[] = [];
 
   vi.stubGlobal("fetch", async (_url: unknown, init?: RequestInit) => {
@@ -77,21 +64,26 @@ function stubRpc(): CapturedEthCall[] {
     const [{ to, data }, block] = body.params;
     captured.push({ to, data, block });
 
+    if (failWith) {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: failWith } }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     let result: Hex;
-    if (data.startsWith("0x82ad56cb")) {
-      // aggregate3(calls[]) — answer every inner call with a valid TXT record
+    if (data.startsWith(AGGREGATE3_SELECTOR)) {
       const decoded = decodeFunctionData({ abi: multicall3Abi, data });
-      const calls = decoded.args[0];
       result = encodeFunctionResult({
         abi: multicall3Abi,
         functionName: "aggregate3",
-        result: calls.map(() => ({
+        result: decoded.args[0].map((call) => ({
           success: true,
-          returnData: encodeUniversalResolverResult(VALID_PUBLIC_KEY),
+          returnData: answerTextCall(call.callData, records),
         })),
       });
     } else {
-      result = encodeUniversalResolverResult(VALID_PUBLIC_KEY);
+      result = answerTextCall(data, records);
     }
 
     return new Response(
@@ -103,10 +95,19 @@ function stubRpc(): CapturedEthCall[] {
   return captured;
 }
 
-function decodedBatchCallCount(call: CapturedEthCall): number {
+function decodedBatchCalls(call: CapturedEthCall) {
   const decoded = decodeFunctionData({ abi: multicall3Abi, data: call.data });
-  return decoded.args[0].length;
+  return decoded.args[0];
 }
+
+function decodedBatchCallCount(call: CapturedEthCall): number {
+  return decodedBatchCalls(call).length;
+}
+
+const ALL_NAMES = ["a.bso", "b.bso", "c.bso"];
+const ALL_RECORDS = Object.fromEntries(
+  ALL_NAMES.map((name) => [namehash(name), VALID_PUBLIC_KEY])
+);
 
 describe("BsoResolver multicall batching (real viem client)", () => {
   afterEach(() => {
@@ -114,7 +115,7 @@ describe("BsoResolver multicall batching (real viem client)", () => {
   });
 
   it("coalesces concurrent resolves into a single aggregate3 eth_call", async () => {
-    const captured = stubRpc();
+    const captured = stubRpc(ALL_RECORDS);
     const resolver = new BsoResolver({
       key: "bso-batch",
       provider: "https://rpc.batch.test",
@@ -134,17 +135,21 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     ]);
     expect(captured).toHaveLength(1);
     expect(decodedBatchCallCount(captured[0])).toBe(3);
+    expect(captured[0].to.toLowerCase()).toBe(
+      BSO_REGISTRY.chain.contracts.multicall3.address.toLowerCase()
+    );
+    for (const call of decodedBatchCalls(captured[0])) {
+      expect(call.target.toLowerCase()).toBe(BSO_REGISTRY.address.toLowerCase());
+    }
 
     await resolver.destroy();
   });
 
-  // Block numbers must be >= 23085558: viem's mainnet chain config marks the
-  // ENS universal resolver as deployed at that block and getEnsText throws
-  // ChainDoesNotSupportContract for older blockNumbers.
-  const HISTORICAL_BLOCK = 23_500_000n;
+  // Any block at or after the registry's deployment.
+  const HISTORICAL_BLOCK = BSO_REGISTRY.deploymentBlock + 1_000n;
 
   it("coalesces concurrent resolves pinned to the same blockNumber", async () => {
-    const captured = stubRpc();
+    const captured = stubRpc(ALL_RECORDS);
     const resolver = new BsoResolver({
       key: "bso-batch-block",
       provider: "https://rpc.batch.test",
@@ -168,7 +173,7 @@ describe("BsoResolver multicall batching (real viem client)", () => {
   });
 
   it("does not merge resolves pinned to different blockNumbers", async () => {
-    const captured = stubRpc();
+    const captured = stubRpc(ALL_RECORDS);
     const resolver = new BsoResolver({
       key: "bso-batch-blocks",
       provider: "https://rpc.batch.test",
@@ -187,7 +192,7 @@ describe("BsoResolver multicall batching (real viem client)", () => {
   });
 
   it("sends individual eth_calls with batch: false", async () => {
-    const captured = stubRpc();
+    const captured = stubRpc(ALL_RECORDS);
     const resolver = new BsoResolver({
       key: "bso-no-batch",
       provider: "https://rpc.batch.test",
@@ -207,8 +212,58 @@ describe("BsoResolver multicall batching (real viem client)", () => {
     ]);
     expect(captured).toHaveLength(3);
     for (const call of captured) {
-      expect(call.data.startsWith("0x82ad56cb")).toBe(false);
+      expect(call.data.startsWith(AGGREGATE3_SELECTOR)).toBe(false);
+      expect(call.to.toLowerCase()).toBe(BSO_REGISTRY.address.toLowerCase());
     }
+
+    await resolver.destroy();
+  });
+  it("returns each name's own record from a batch, undefined for empty ones", async () => {
+    const otherKey = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
+    const captured = stubRpc({
+      [namehash("a.bso")]: VALID_PUBLIC_KEY,
+      [namehash("blog.c.bso")]: `${otherKey};network=testnet`,
+    });
+    const resolver = new BsoResolver({
+      key: "bso-batch-mixed",
+      provider: "https://rpc.batch.test",
+      batch: { wait: 50 },
+    });
+
+    const results = await Promise.all([
+      resolver.resolve({ name: "a.bso" }),
+      resolver.resolve({ name: "unregistered.bso" }),
+      resolver.resolve({ name: "blog.c.bso" }),
+    ]);
+
+    expect(results).toEqual([
+      { publicKey: VALID_PUBLIC_KEY },
+      undefined,
+      { publicKey: otherKey, network: "testnet" },
+    ]);
+    expect(captured).toHaveLength(1);
+
+    await resolver.destroy();
+  });
+
+  it("rejects every resolve in a batch when the batched eth_call fails", async () => {
+    const captured = stubRpc(ALL_RECORDS, { failWith: "rate limited" });
+    const resolver = new BsoResolver({
+      key: "bso-batch-fail",
+      provider: "https://rpc.batch.test",
+      batch: { wait: 50 },
+    });
+
+    const results = await Promise.allSettled(
+      ALL_NAMES.map((name) => resolver.resolve({ name }))
+    );
+
+    expect(results.map((result) => result.status)).toEqual([
+      "rejected",
+      "rejected",
+      "rejected",
+    ]);
+    expect(captured.every((call) => call.data.startsWith(AGGREGATE3_SELECTOR))).toBe(true);
 
     await resolver.destroy();
   });

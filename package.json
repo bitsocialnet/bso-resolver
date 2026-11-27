@@ -38,6 +38,8 @@
     "build": "tsup",
     "pretest": "npm run build",
     "test": "vitest run",
+    "pretest:live": "npm run build",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:browser": "vitest run --project browser",
     "test:browser:install": "playwright install chromium firefox",
     "test:browser:watch": "vitest --project browser",
