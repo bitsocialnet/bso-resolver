@@ -19,7 +19,7 @@ const PROVIDERS = [
 const ARCHIVE_PROVIDERS = ["https://sepolia.gateway.tenderly.co", "viem"];
 
 // A block after the seed list was written to the registry.
-const SEEDED_BLOCK = BSO_REGISTRY.deploymentBlock + 553n;
+const SEEDED_BLOCK = BSO_REGISTRY.deploymentBlock + 32n;
 
 async function withResolver<T>(
   run: (resolver: BsoResolver) => Promise<T>,
@@ -68,15 +68,15 @@ describe(`BSIP-13 registry on ${BSO_REGISTRY.chain.name} (live)`, () => {
   });
 
   it("resolves a name registered through commit-reveal after the seed", async () => {
-    // bso-resolver-test.bso was registered for this suite at block 12210251 and
-    // its record set at block 12210253. It is not on the seed list. The
-    // registration expires on 2027-11-25 unless renewed.
+    // bso-resolver-test.bso was registered for this suite at block 12222930 and
+    // its record set at block 12222931. It is not on the seed list. The
+    // registration expires on 2027-11-27 unless renewed.
     expect(await resolveLive("bso-resolver-test.bso")).toEqual({
       publicKey: "12D3KooWN5rLmRJ8fWMwTtkDN7w2RgPPGRM4mtWTnfbjpi1Sh7zR",
     });
     // One block before the record was set, the name is registered with no record.
     expect(
-      await resolveLive("bso-resolver-test.bso", 12_210_252n, ARCHIVE_PROVIDERS)
+      await resolveLive("bso-resolver-test.bso", 12_222_930n, ARCHIVE_PROVIDERS)
     ).toBeUndefined();
   });
 
@@ -91,7 +91,7 @@ describe(`BSIP-13 registry on ${BSO_REGISTRY.chain.name} (live)`, () => {
     ).toBeUndefined();
   });
 
-  it("returns undefined for a registered non-ASCII name with no record", async () => {
+  it("returns undefined for an unregistered non-ASCII name", async () => {
     expect(await resolveLive("日本語.bso")).toBeUndefined();
   });
 

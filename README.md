@@ -2,7 +2,7 @@
 
 Resolve `.bso` names to their `bitsocial` TXT records from the [BSIP-13](https://bsips.bitsocial.net/bsip-13#resolving-bso-names) registry.
 
-> **Pre-release:** the registry is not on Ethereum mainnet yet, so this branch reads the Sepolia test deployment at [`0x0E1d1c4Df4221335b7E906c587f5025265De2042`](https://sepolia.etherscan.io/address/0x0E1d1c4Df4221335b7E906c587f5025265De2042#code) and needs a Sepolia RPC as `provider`. The examples below are written for mainnet, which is what the released package will use.
+> **Pre-release:** the registry is not on Ethereum mainnet yet, so this branch reads the Sepolia test deployment at [`0x897464025Cd22A3d1b3a8760d5E4dBe2C572D708`](https://sepolia.etherscan.io/address/0x897464025Cd22A3d1b3a8760d5E4dBe2C572D708#code) and needs a Sepolia RPC as `provider`. The examples below are written for mainnet, which is what the released package will use.
 
 ## Install
 
@@ -74,7 +74,7 @@ const record2 = await resolver.resolve({
 // this example block is on the Sepolia test deployment)
 const record3 = await resolver.resolve({
   name: "example.bso",
-  blockNumber: 12203500n,
+  blockNumber: 12222700n,
 });
 
 // Clean up when done
@@ -117,7 +117,7 @@ const resolver = new BsoResolver({
 Resolves a `.bso` name by reading its `bitsocial` TXT record from the BSIP-13 registry: the name is normalized, hashed with the `.bso` suffix kept (`node = namehash(name)`), and looked up with the registry's `text(node, "bitsocial")`. A name without a TLD is treated as `.bso`; any other TLD throws.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
-- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be at or after the registry's deployment block (`12202947` for the Sepolia test deployment; the mainnet block will be listed here once the registry is deployed). An older block reads a chain state where the registry does not exist, so the resolve throws instead of returning `undefined`. The provider must also keep state for that block: many free RPCs only serve recent blocks.
+- **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be at or after the registry's deployment block (`12222608` for the Sepolia test deployment; the mainnet block will be listed here once the registry is deployed). An older block reads a chain state where the registry does not exist, so the resolve throws instead of returning `undefined`. The provider must also keep state for that block: many free RPCs only serve recent blocks.
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
 Returns a [`BsoResolveResult`](#return-type-bsoresolveresult), or `undefined` if not found.

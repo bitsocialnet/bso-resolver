@@ -13,10 +13,10 @@ const log = Logger("bitsocial:bso-resolver");
  *  `address` and `deploymentBlock` to the mainnet registry once it is deployed. */
 export const BSO_REGISTRY = {
   chain: sepolia,
-  address: "0x0E1d1c4Df4221335b7E906c587f5025265De2042",
+  address: "0x897464025Cd22A3d1b3a8760d5E4dBe2C572D708",
   /** Block the registry was deployed at. A `blockNumber` below this reads a
    *  chain state where the registry does not exist yet, so the resolve throws. */
-  deploymentBlock: 12_202_947n,
+  deploymentBlock: 12_222_608n,
 } as const;
 
 const BSO_TXT_RECORD_KEY = "bitsocial";
