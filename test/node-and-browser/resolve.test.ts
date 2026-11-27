@@ -5,7 +5,9 @@ vi.mock("viem", () => ({
   createPublicClient: vi.fn(() => ({
     getEnsText: vi.fn(),
   })),
+  createTransport: vi.fn(),
   http: vi.fn(() => "mock-http-transport"),
+  RpcRequestError: class RpcRequestError extends Error {},
   webSocket: vi.fn(() => "mock-ws-transport"),
 }));
 
@@ -44,7 +46,7 @@ describe("BsoResolver", () => {
     const result = await resolver.resolve({ name: "example.bso" });
 
     expect(result).toEqual({ publicKey: VALID_PUBLIC_KEY });
-    expect(http).toHaveBeenCalledWith(undefined, { fetchOptions: { signal: expect.any(AbortSignal) } });
+    expect(http).toHaveBeenCalledWith(undefined, { fetchFn: expect.any(Function) });
     expect(getMockGetEnsText()).toHaveBeenCalledWith({
       name: "example.eth",
       key: "bitsocial",
@@ -91,7 +93,7 @@ describe("BsoResolver", () => {
     const resolver = new BsoResolver({ key: "bso-rpc", provider: "https://rpc.example.com" });
     await resolver.resolve({ name: "example.bso" });
 
-    expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchOptions: { signal: expect.any(AbortSignal) } });
+    expect(http).toHaveBeenCalledWith("https://rpc.example.com", { fetchFn: expect.any(Function) });
 
     await resolver.destroy();
   });
@@ -381,6 +383,30 @@ describe("BsoResolver abort and destroy", () => {
     await resolver.destroy();
   });
 
+  it("does not start the lookup for a pre-aborted signal", async () => {
+    (createPublicClient as Mock).mockImplementation(() => ({
+      getEnsText: vi.fn().mockRejectedValue(new Error("RPC error")),
+    }));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+
+    await expect(
+      resolver.resolve({
+        name: "example.bso",
+        abortSignal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    // A started lookup would send an eth_call and, when it fails, leave a
+    // rejection nobody handles.
+    expect(getMockGetEnsText()).not.toHaveBeenCalled();
+
+    await resolver.destroy();
+  });
+
   it("rejects with AbortError when aborted during in-flight resolution", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn(
@@ -427,67 +453,10 @@ describe("BsoResolver abort and destroy", () => {
     await expect(pending2).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("destroy() closes WebSocket connection", async () => {
-    const mockClose = vi.fn();
-    const mockRpcClient = { close: mockClose };
+  // WebSocket close-on-destroy is covered against the real viem client in
+  // websocket-transport.test.ts.
 
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockResolvedValue(mockRpcClient),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    expect(mockClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("destroy() swallows getRpcClient() rejection and still completes", async () => {
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockRejectedValue(new Error("WebSocket already closed")),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    await expect(
-      resolver.resolve({ name: "example.bso" })
-    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
-  });
-
-  it("destroy() swallows WebSocket close() throws and still completes", async () => {
-    (createPublicClient as Mock).mockImplementation(() => ({
-      getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
-      transport: {
-        type: "webSocket",
-        getRpcClient: vi.fn().mockResolvedValue({
-          close: vi.fn(() => { throw new Error("close failed"); }),
-        }),
-      },
-    }));
-
-    const resolver = new BsoResolver({ key: "bso-ws", provider: "wss://rpc.example.com" });
-    await resolver.resolve({ name: "example.bso" });
-
-    await resolver.destroy();
-
-    await expect(
-      resolver.resolve({ name: "example.bso" })
-    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
-  });
-
-  it("passes destroy signal to http() transport fetchOptions", async () => {
+  it("http() transport fetch keeps viem's request signal and adds the destroy signal", async () => {
     (createPublicClient as Mock).mockImplementation(() => ({
       getEnsText: vi.fn().mockResolvedValue(VALID_PUBLIC_KEY),
     }));
@@ -495,15 +464,29 @@ describe("BsoResolver abort and destroy", () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     await resolver.resolve({ name: "example.bso" });
 
-    // Capture the signal passed to http()
-    const httpCall = (http as Mock).mock.calls[0];
-    const signal = httpCall[1]?.fetchOptions?.signal;
-    expect(signal).toBeInstanceOf(AbortSignal);
-    expect(signal.aborted).toBe(false);
+    // Capture the fetchFn passed to http() and the signals it hands to fetch
+    const fetchFn = (http as Mock).mock.calls[0][1].fetchFn;
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", async (_url: unknown, init?: RequestInit) => {
+      signals.push(init!.signal!);
+      return new Response("{}");
+    });
 
-    await resolver.destroy();
+    try {
+      const requestController = new AbortController();
+      await fetchFn("https://rpc.example.com", { signal: requestController.signal });
+      await fetchFn("https://rpc.example.com", {});
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
 
-    expect(signal.aborted).toBe(true);
+      // viem aborts its request signal when the request times out
+      requestController.abort();
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+
+      await resolver.destroy();
+      expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -539,6 +522,16 @@ describe("BsoResolver lifecycle", () => {
   it("destroy() is a no-op if resolve() was never called", async () => {
     const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
     await resolver.destroy(); // should not throw
+  });
+
+  it("throws on resolve() after destroy() even if resolve() was never called before", async () => {
+    const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
+    await resolver.destroy();
+
+    await expect(
+      resolver.resolve({ name: "example.bso" })
+    ).rejects.toThrow("Cannot resolve after destroy() has been called.");
+    expect(createPublicClient).not.toHaveBeenCalled();
   });
 
   it("canResolve works without initialization", () => {
