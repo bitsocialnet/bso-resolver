@@ -1,10 +1,36 @@
-import Logger from "@pkcprotocol/pkc-logger";
-import type { NameResolverInterface } from "@pkcprotocol/pkc-js";
+import type { Logger } from "@pkcprotocol/pkc-logger";
 import { createPublicClient, http, webSocket, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 
-const log = Logger("bitsocial:bso-resolver");
+/** Host of a provider for logs and errors. The full URL often carries an API
+ *  key in its path or query, which must not end up in a log buffer. */
+export function providerHost(provider: string): string {
+  if (provider === "viem") return provider;
+  try {
+    return new URL(provider).host || "<invalid provider url>";
+  } catch {
+    return "<invalid provider url>";
+  }
+}
+
+/** Error summary for logs. A viem error's `message` embeds the request URL
+ *  (and with it any API key); its `shortMessage` does not. Errors without a
+ *  `shortMessage` are this package's own (TXT record validation, abort) and
+ *  carry no URL. */
+function errorSummary(error: unknown): string {
+  if (error instanceof Error) {
+    const shortMessage = (error as { shortMessage?: unknown }).shortMessage;
+    return typeof shortMessage === "string" ? shortMessage : error.message;
+  }
+  return String(error);
+}
+
+function assertLog(log: unknown, method: string): asserts log is Logger {
+  if (!log || (typeof log !== "object" && typeof log !== "function")) {
+    throw new TypeError(`${method}: "log" is required`);
+  }
+}
 
 export interface CanResolveBsoArgs {
   name: string;
@@ -240,7 +266,7 @@ export function canResolveBso({ name }: CanResolveBsoArgs): boolean {
   return isBsoAliasDomain(name);
 }
 
-export abstract class BaseBsoResolver implements NameResolverInterface {
+export abstract class BaseBsoResolver {
   readonly key: string;
   readonly provider: string;
 
@@ -266,11 +292,14 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
     name,
     blockNumber,
     abortSignal,
+    log,
   }: {
     name: string;
     blockNumber?: bigint;
     abortSignal?: AbortSignal;
+    log: Logger;
   }): Promise<BsoResolveResult | undefined> {
+    assertLog(log, "resolve()");
     if (this._destroyed) {
       throw new Error("Cannot resolve after destroy() has been called.");
     }
@@ -295,16 +324,18 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
       );
     } catch (error) {
       if (error instanceof Error && (error as any).details) {
-        (error as any).details.provider = this.provider;
+        (error as any).details.provider = providerHost(this.provider);
       }
       log.trace(
-        `Failed to resolve "${name}" with provider "${this.provider}": ${error instanceof Error ? error.message : error}`
+        `Failed to resolve "${name}" with provider "${providerHost(this.provider)}": ${errorSummary(error)}`
       );
       throw error;
     }
   }
 
-  async destroy(): Promise<void> {
+  async destroy(opts: { log: Logger }): Promise<void> {
+    const log = opts?.log;
+    assertLog(log, "destroy()");
     if (!this._initialized || this._destroyed) return;
     this._destroyed = true;
 
@@ -319,7 +350,7 @@ export abstract class BaseBsoResolver implements NameResolverInterface {
       }
     } catch (error) {
       log.error(
-        `Failed to close WebSocket for provider "${this.provider}": ${error instanceof Error ? error.message : error}`
+        `Failed to close WebSocket for provider "${providerHost(this.provider)}": ${errorSummary(error)}`
       );
     }
 

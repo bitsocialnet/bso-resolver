@@ -42,18 +42,26 @@
     "test:browser:install": "playwright install chromium firefox",
     "test:browser:watch": "vitest --project browser",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "prepare": "husky && tsup",
     "release": "HUSKY=0 release-it --config config/.release-it.json"
   },
   "dependencies": {
-    "@pkcprotocol/pkc-logger": "0.1.0",
     "viem": "2.55.1"
+  },
+  "peerDependencies": {
+    "@pkcprotocol/pkc-js": ">=0.0.165"
+  },
+  "peerDependenciesMeta": {
+    "@pkcprotocol/pkc-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@commitlint/cli": "20.4.3",
     "@commitlint/config-conventional": "20.4.3",
-    "@pkcprotocol/pkc-js": "0.0.163",
+    "@pkcprotocol/pkc-js": "0.0.165",
+    "@pkcprotocol/pkc-logger": "0.3.1",
     "@release-it/conventional-changelog": "10.0.5",
     "@vitest/browser-playwright": "4.1.12",
     "commitizen": "4.3.2",
@@ -71,10 +79,6 @@
     }
   },
   "overrides": {
-    "@pkcprotocol/pkc-js": {
-      "probe-image-size": "7.4.0",
-      "uuid@13": "13.0.1"
-    },
     "get-uri": {
       "basic-ftp": "6.2.3"
     },

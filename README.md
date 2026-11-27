@@ -8,6 +8,12 @@ Resolve `.bso` domain names via `bitsocial` TXT records.
 npm install @bitsocial/bso-resolver
 ```
 
+With pkc-js, use `@pkcprotocol/pkc-js` 0.0.165 or newer (it passes the `log` that `resolve()` and `destroy()` require). Without pkc-js, also install the logger:
+
+```bash
+npm install @pkcprotocol/pkc-logger
+```
+
 
 
 ## With pkc-js
@@ -40,8 +46,13 @@ await pkc.destroy(); // should cascade to resolver.destroy() for each resolver
 
 ## Usage
 
+`resolve()` and `destroy()` require a `log`. pkc-js passes its own; standalone, create one with [`@pkcprotocol/pkc-logger`](https://github.com/pkcprotocol/pkc-logger):
+
 ```ts
 import { BsoResolver } from "@bitsocial/bso-resolver";
+import Logger from "@pkcprotocol/pkc-logger";
+
+const log = Logger({ namespace: "my-app:bso" });
 
 // Create a resolver instance
 const resolver = new BsoResolver({ key: "bso-viem", provider: "viem" });
@@ -51,7 +62,7 @@ resolver.canResolve({ name: "example.bso" }); // true
 resolver.canResolve({ name: "example.com" }); // false
 
 // Resolve a name
-const record = await resolver.resolve({ name: "example.bso" });
+const record = await resolver.resolve({ name: "example.bso", log });
 // BsoResolveResult | undefined
 
 // Resolve using a custom RPC URL
@@ -65,6 +76,7 @@ const controller = new AbortController();
 const record2 = await resolver.resolve({
   name: "example.bso",
   abortSignal: controller.signal,
+  log,
 });
 
 // Optional: pin resolution to a historical block for deterministic reads
@@ -72,11 +84,12 @@ const record2 = await resolver.resolve({
 const record3 = await resolver.resolve({
   name: "example.bso",
   blockNumber: 23500000n,
+  log,
 });
 
 // Clean up when done
-await resolver.destroy();
-await resolver2.destroy();
+await resolver.destroy({ log });
+await resolver2.destroy({ log });
 ```
 
 ## Recommended chain providers
@@ -109,11 +122,12 @@ const resolver = new BsoResolver({
 
 > **Caching is not handled here.** This module is a thin network wrapper. Callers (such as `pkc-js`) are responsible for caching resolution results. Every call to `resolve()` makes a fresh RPC request.
 
-#### `resolver.resolve({ name, blockNumber?, abortSignal? }): Promise<BsoResolveResult | undefined>`
+#### `resolver.resolve({ name, log, blockNumber?, abortSignal? }): Promise<BsoResolveResult | undefined>`
 
 Resolves a `.bso` name by looking up the `bitsocial` TXT record.
 
 - **`name`** - The domain name to resolve (e.g. `"example.bso"`)
+- **`log`** - A `Logger` from `@pkcprotocol/pkc-logger`. pkc-js passes one tagged with the name being resolved. A failed resolve is logged at `trace` level. Logs and `error.details.provider` show only the provider's host, never the full URL (which often carries an API key). Throws `TypeError` if missing.
 - **`blockNumber`** (optional) - `bigint` block number to pin the text-record read to a canonical historical block. When omitted, resolves at head (`'latest'`). Useful when independent verifiers must read the same registry state deterministically. Must be `>= 23085558` — viem resolves through the ENS universal resolver, which was deployed at that block, and throws `ChainDoesNotSupportContract` for older blocks.
 - **`abortSignal`** (optional) - Abort signal used to cancel an in-flight resolve
 
@@ -142,9 +156,11 @@ interface BsoResolveResult {
 
 Returns `true` if the name ends with `.bso` (case-insensitive).
 
-#### `resolver.destroy(): Promise<void>`
+#### `resolver.destroy({ log }): Promise<void>`
 
 Aborts in-flight resolves, closes the WebSocket connection (if any), and releases the viem client. Idempotent — safe to call multiple times.
+
+- **`log`** - A `Logger` from `@pkcprotocol/pkc-logger` (pkc-js passes one). A failure to close the WebSocket is logged at `error` level. Throws `TypeError` if missing.
 
 After `destroy()`, calling `resolve()` will throw.
 
